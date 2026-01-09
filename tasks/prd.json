@@ -1,0 +1,334 @@
+{
+  "project": {
+    "name": "ISF Cost Estimator",
+    "description": "AI-powered tool for Italian Shoe Factory staff to analyze customer photos, suggest repair services, and generate Shopify orders",
+    "version": "1.0.0",
+    "completionPromise": "ISF COST ESTIMATOR COMPLETE"
+  },
+  "techStack": {
+    "framework": "Next.js 14+ (App Router)",
+    "language": "TypeScript",
+    "styling": "Tailwind CSS",
+    "database": "Supabase",
+    "ai": "OpenAI GPT-4 Vision",
+    "ecommerce": "Shopify Admin API"
+  },
+  "milestones": [
+    {
+      "id": "M1",
+      "name": "Foundation",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "M1-T1",
+          "name": "Initialize Next.js project",
+          "description": "Create Next.js 14 project with TypeScript, Tailwind, and src directory",
+          "status": "pending",
+          "command": "npx create-next-app@latest isf-cost-estimator --typescript --tailwind --app --src-dir"
+        },
+        {
+          "id": "M1-T2",
+          "name": "Set up Supabase project",
+          "description": "Create Supabase project, get API keys, create .env.local",
+          "status": "pending",
+          "manual": true
+        },
+        {
+          "id": "M1-T3",
+          "name": "Create database schema",
+          "description": "Create estimations, estimation_items, and item_services tables",
+          "status": "pending"
+        },
+        {
+          "id": "M1-T4",
+          "name": "Define TypeScript interfaces",
+          "description": "Create types for Estimation, Item, Service, Analysis",
+          "status": "pending",
+          "files": ["src/types/estimation.ts", "src/types/item.ts", "src/types/service.ts"]
+        }
+      ]
+    },
+    {
+      "id": "M2",
+      "name": "Image Upload",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "M2-T1",
+          "name": "Create Supabase storage bucket",
+          "description": "Create 'item-images' bucket for storing uploaded photos",
+          "status": "pending"
+        },
+        {
+          "id": "M2-T2",
+          "name": "Build camera capture component",
+          "description": "Mobile-friendly camera button using getUserMedia API",
+          "status": "pending",
+          "files": ["src/components/estimation/camera-capture.tsx"]
+        },
+        {
+          "id": "M2-T3",
+          "name": "Build drag-and-drop upload",
+          "description": "Drop zone for desktop users to drag images",
+          "status": "pending",
+          "files": ["src/components/estimation/drop-zone.tsx"]
+        },
+        {
+          "id": "M2-T4",
+          "name": "Build file picker",
+          "description": "Traditional file input as fallback",
+          "status": "pending",
+          "files": ["src/components/estimation/file-picker.tsx"]
+        },
+        {
+          "id": "M2-T5",
+          "name": "Create image upload component",
+          "description": "Combine camera, drop zone, and file picker into one component",
+          "status": "pending",
+          "files": ["src/components/estimation/image-upload.tsx"]
+        },
+        {
+          "id": "M2-T6",
+          "name": "Build image preview gallery",
+          "description": "Show thumbnails of uploaded images with remove button",
+          "status": "pending",
+          "files": ["src/components/estimation/image-preview.tsx"]
+        },
+        {
+          "id": "M2-T7",
+          "name": "Implement Supabase storage upload",
+          "description": "Upload images to Supabase Storage, return public URLs",
+          "status": "pending",
+          "files": ["src/lib/supabase/storage.ts"]
+        }
+      ]
+    },
+    {
+      "id": "M3",
+      "name": "AI Analysis",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "M3-T1",
+          "name": "Create OpenAI client",
+          "description": "Set up OpenAI SDK with API key from environment",
+          "status": "pending",
+          "files": ["src/lib/ai/openai.ts"]
+        },
+        {
+          "id": "M3-T2",
+          "name": "Write analysis prompt",
+          "description": "Craft prompt for GPT-4 Vision to analyze shoes/bags/leather",
+          "status": "pending",
+          "files": ["src/lib/ai/prompts.ts"]
+        },
+        {
+          "id": "M3-T3",
+          "name": "Build analyze API route",
+          "description": "POST endpoint that receives images and returns analysis",
+          "status": "pending",
+          "files": ["src/app/api/analyze/route.ts"]
+        },
+        {
+          "id": "M3-T4",
+          "name": "Build item card component",
+          "description": "Display analysis results: category, material, condition, issues",
+          "status": "pending",
+          "files": ["src/components/estimation/item-card.tsx"]
+        },
+        {
+          "id": "M3-T5",
+          "name": "Build confidence indicator",
+          "description": "Visual indicator showing AI confidence percentage",
+          "status": "pending",
+          "files": ["src/components/estimation/confidence-indicator.tsx"]
+        }
+      ]
+    },
+    {
+      "id": "M4",
+      "name": "Shopify Integration",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "M4-T1",
+          "name": "Create Shopify client",
+          "description": "Set up Shopify Admin API client with access token",
+          "status": "pending",
+          "files": ["src/lib/shopify/client.ts"]
+        },
+        {
+          "id": "M4-T2",
+          "name": "Fetch products API route",
+          "description": "GET endpoint to fetch products tagged 'service'",
+          "status": "pending",
+          "files": ["src/app/api/shopify/products/route.ts", "src/lib/shopify/products.ts"]
+        },
+        {
+          "id": "M4-T3",
+          "name": "Build service selector component",
+          "description": "UI to browse, search, and select services",
+          "status": "pending",
+          "files": ["src/components/estimation/service-selector.tsx"]
+        },
+        {
+          "id": "M4-T4",
+          "name": "Build price calculation engine",
+          "description": "Calculate subtotals, apply modifiers, compute grand total",
+          "status": "pending",
+          "files": ["src/lib/estimation/engine.ts"]
+        },
+        {
+          "id": "M4-T5",
+          "name": "Build price summary component",
+          "description": "Display itemized pricing and grand total in AED",
+          "status": "pending",
+          "files": ["src/components/estimation/price-summary.tsx"]
+        }
+      ]
+    },
+    {
+      "id": "M5",
+      "name": "Order Generation",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "M5-T1",
+          "name": "Create draft order API route",
+          "description": "POST endpoint to create Shopify draft order",
+          "status": "pending",
+          "files": ["src/app/api/shopify/draft-orders/route.ts", "src/lib/shopify/draft-orders.ts"]
+        },
+        {
+          "id": "M5-T2",
+          "name": "Build draft order preview",
+          "description": "Show order summary before generating",
+          "status": "pending",
+          "files": ["src/components/output/draft-order-preview.tsx"]
+        },
+        {
+          "id": "M5-T3",
+          "name": "Build customer message generator",
+          "description": "Template-based message with items, price, turnaround, link",
+          "status": "pending",
+          "files": ["src/lib/estimation/templates.ts", "src/components/output/customer-message.tsx"]
+        },
+        {
+          "id": "M5-T4",
+          "name": "Build copy button component",
+          "description": "One-click copy to clipboard with feedback",
+          "status": "pending",
+          "files": ["src/components/ui/copy-button.tsx"]
+        },
+        {
+          "id": "M5-T5",
+          "name": "Save estimation to database",
+          "description": "Store completed estimation in Supabase",
+          "status": "pending",
+          "files": ["src/lib/supabase/estimations.ts"]
+        }
+      ]
+    },
+    {
+      "id": "M6",
+      "name": "History & Polish",
+      "status": "pending",
+      "tasks": [
+        {
+          "id": "M6-T1",
+          "name": "Build estimation history page",
+          "description": "List view of past estimations with status",
+          "status": "pending",
+          "files": ["src/app/estimations/page.tsx"]
+        },
+        {
+          "id": "M6-T2",
+          "name": "Build estimation detail page",
+          "description": "View and reopen past estimation",
+          "status": "pending",
+          "files": ["src/app/estimations/[id]/page.tsx"]
+        },
+        {
+          "id": "M6-T3",
+          "name": "Add loading states",
+          "description": "Skeleton loaders and spinners throughout",
+          "status": "pending"
+        },
+        {
+          "id": "M6-T4",
+          "name": "Add error handling",
+          "description": "Error boundaries, toast notifications, retry logic",
+          "status": "pending"
+        },
+        {
+          "id": "M6-T5",
+          "name": "Mobile optimization",
+          "description": "Test and fix UI on various phone/tablet sizes",
+          "status": "pending"
+        },
+        {
+          "id": "M6-T6",
+          "name": "Final testing",
+          "description": "End-to-end test of complete workflow",
+          "status": "pending"
+        }
+      ]
+    }
+  ],
+  "features": [
+    {
+      "id": "F1",
+      "name": "Image Upload",
+      "description": "Upload photos via camera, drag-and-drop, or file picker",
+      "milestone": "M2"
+    },
+    {
+      "id": "F2",
+      "name": "AI Analysis",
+      "description": "GPT-4 Vision analyzes images for item type, material, condition, issues",
+      "milestone": "M3"
+    },
+    {
+      "id": "F3",
+      "name": "Service Selection",
+      "description": "Browse and select services from Shopify catalog",
+      "milestone": "M4"
+    },
+    {
+      "id": "F4",
+      "name": "Price Calculation",
+      "description": "Calculate pricing with base prices and modifiers",
+      "milestone": "M4"
+    },
+    {
+      "id": "F5",
+      "name": "Draft Order",
+      "description": "Generate Shopify draft order with checkout link",
+      "milestone": "M5"
+    },
+    {
+      "id": "F6",
+      "name": "Customer Message",
+      "description": "Generate templated response for customer",
+      "milestone": "M5"
+    },
+    {
+      "id": "F7",
+      "name": "Estimation History",
+      "description": "View and reopen past estimations",
+      "milestone": "M6"
+    }
+  ],
+  "environment": {
+    "required": [
+      "OPENAI_API_KEY",
+      "NEXT_PUBLIC_SUPABASE_URL",
+      "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      "SHOPIFY_STORE_DOMAIN",
+      "SHOPIFY_ADMIN_ACCESS_TOKEN"
+    ],
+    "optional": [
+      "SUPABASE_SERVICE_ROLE_KEY"
+    ]
+  }
+}

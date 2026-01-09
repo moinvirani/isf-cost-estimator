@@ -1,65 +1,176 @@
-import Image from "next/image";
+'use client'
+
+/**
+ * ISF Cost Estimator - Main Page
+ *
+ * This is the main workflow page where staff:
+ * 1. Upload customer photos
+ * 2. Review AI analysis
+ * 3. Select services
+ * 4. Generate draft order
+ */
+
+import { useState } from 'react'
+import { ImageUpload } from '@/components/estimation'
+import { uploadImages } from '@/lib/supabase/storage'
+
+// Type for our uploaded images (before Supabase upload)
+interface LocalImage {
+  id: string
+  file: File
+  previewUrl: string
+}
+
+// Type for images after Supabase upload
+interface UploadedImage {
+  id: string
+  url: string
+  path: string
+}
 
 export default function Home() {
+  const [localImages, setLocalImages] = useState<LocalImage[]>([])
+  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+
+  // Handle image selection (local preview)
+  const handleImagesChange = (images: LocalImage[]) => {
+    setLocalImages(images)
+    setUploadError(null)
+  }
+
+  // Handle upload to Supabase
+  const handleUpload = async () => {
+    if (localImages.length === 0) return
+
+    setIsUploading(true)
+    setUploadError(null)
+
+    try {
+      // Upload all images to Supabase Storage
+      const files = localImages.map((img) => img.file)
+      const results = await uploadImages(files)
+
+      // Map results to our format
+      const uploaded: UploadedImage[] = results.map((result, index) => ({
+        id: localImages[index].id,
+        url: result.url,
+        path: result.path,
+      }))
+
+      setUploadedImages(uploaded)
+
+      // Clear local images (they're now uploaded)
+      setLocalImages([])
+
+      console.log('Upload successful:', uploaded)
+    } catch (error) {
+      console.error('Upload failed:', error)
+      setUploadError(
+        error instanceof Error ? error.message : 'Upload failed. Please try again.'
+      )
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  const hasLocalImages = localImages.length > 0
+  const hasUploadedImages = uploadedImages.length > 0
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <main className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-3xl mx-auto px-4 py-4">
+          <h1 className="text-xl font-semibold text-gray-900">
+            ISF Cost Estimator
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-sm text-gray-500">
+            Upload photos to get service recommendations
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+      </header>
+
+      {/* Main Content */}
+      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+        {/* Step 1: Upload Images */}
+        <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <h2 className="text-lg font-medium text-gray-900 mb-4">
+            Step 1: Upload Photos
+          </h2>
+
+          <ImageUpload
+            onImagesChange={handleImagesChange}
+            maxImages={10}
+          />
+
+          {/* Upload Button */}
+          {hasLocalImages && (
+            <div className="mt-4 flex items-center gap-3">
+              <button
+                onClick={handleUpload}
+                disabled={isUploading}
+                className={`
+                  flex-1 py-3 px-4 rounded-lg font-medium text-white
+                  transition-colors
+                  ${isUploading
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                  }
+                `}
+              >
+                {isUploading ? 'Uploading...' : `Upload ${localImages.length} Image${localImages.length !== 1 ? 's' : ''}`}
+              </button>
+            </div>
+          )}
+
+          {/* Upload Error */}
+          {uploadError && (
+            <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {uploadError}
+            </div>
+          )}
+        </section>
+
+        {/* Step 2: Uploaded Images (after upload) */}
+        {hasUploadedImages && (
+          <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <h2 className="text-lg font-medium text-gray-900 mb-4">
+              Step 2: Review Items
+            </h2>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {uploadedImages.map((image) => (
+                <div
+                  key={image.id}
+                  className="aspect-square rounded-lg overflow-hidden bg-gray-100 border border-gray-200"
+                >
+                  <img
+                    src={image.url}
+                    alt="Uploaded item"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <p className="mt-4 text-sm text-gray-500">
+              {uploadedImages.length} image{uploadedImages.length !== 1 ? 's' : ''} uploaded.
+              AI analysis coming soon!
+            </p>
+          </section>
+        )}
+
+        {/* Coming Soon: AI Analysis */}
+        {hasUploadedImages && (
+          <section className="bg-gray-100 rounded-xl border border-gray-200 p-4 text-center">
+            <p className="text-gray-500 text-sm">
+              🚧 AI analysis will appear here in the next phase
+            </p>
+          </section>
+        )}
+      </div>
+    </main>
+  )
 }
