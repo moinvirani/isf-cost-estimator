@@ -37,6 +37,9 @@ export default function TrainingPage() {
   const [saving, setSaving] = useState(false)
   const [savedCount, setSavedCount] = useState(0)
 
+  // Service search
+  const [serviceSearch, setServiceSearch] = useState('')
+
   // Fetch Zoko images and Shopify services on mount
   useEffect(() => {
     fetchZokoImages()
@@ -264,15 +267,29 @@ export default function TrainingPage() {
 
             {/* Right: Service Selection */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-              <h3 className="text-lg font-medium text-gray-900 mb-4">
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
                 Select Correct Services
               </h3>
+
+              {/* Search input */}
+              <input
+                type="text"
+                placeholder="Search services... (e.g. suede, heel, bag)"
+                value={serviceSearch}
+                onChange={(e) => setServiceSearch(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
 
               {servicesLoading ? (
                 <p className="text-gray-500">Loading services...</p>
               ) : (
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {services.map((service) => {
+                <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {services
+                    .filter((s) =>
+                      serviceSearch === '' ||
+                      s.title.toLowerCase().includes(serviceSearch.toLowerCase())
+                    )
+                    .map((service) => {
                     const selected = selectedServices.find(s => s.service.id === service.id)
                     return (
                       <div
