@@ -163,12 +163,29 @@ Key functions:
 - `getCustomerMessages(customerId)` - Full message history
 - `findConversationsWithImages(startPage, max)` - Find convos with images
 
-### Next: AI Training System
-1. Build training data extractor from Zoko (images + quoted services)
-2. Create training UI for manual corrections
-3. Store training examples in Supabase
-4. Update AI prompt with few-shot examples from training data
-5. Auto-select recommended services instead of showing all
+### AI Training System ✅ COMPLETE
+Training page at `/training` allows staff to:
+1. View images from Zoko CRM
+2. See conversation context
+3. Select correct services
+4. Save as training examples
+
+Files created:
+- `src/app/training/page.tsx` - Training UI
+- `src/app/api/training/zoko-images/route.ts` - Fetch Zoko images
+- `src/app/api/training/examples/route.ts` - Save/fetch training data
+- `src/types/training.ts` - TypeScript types
+- `supabase/migrations/005_training_examples.sql` - Database table
+
+AI learns from training:
+- Prompts updated with ISF-specific service names
+- Few-shot examples from verified training data
+- More accurate service recommendations over time
+
+### Next Steps
+1. Run the migration: `005_training_examples.sql` in Supabase
+2. Go to `/training` and train the AI with 20-30 examples
+3. AI will start auto-selecting correct services
 
 ## GitHub
 Repository: https://github.com/moinvirani/isf-cost-estimator
