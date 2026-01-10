@@ -167,13 +167,16 @@ Key functions:
 Training page at `/training` allows staff to:
 1. View images from Zoko CRM
 2. See conversation context
-3. Select correct services
-4. Save as training examples
+3. **See customer's Shopify orders** (semi-automatic training)
+4. Click "Use These Services" to pre-fill from orders
+5. Save as training examples
 
 Files created:
-- `src/app/training/page.tsx` - Training UI
+- `src/app/training/page.tsx` - Training UI with Shopify order lookup
 - `src/app/api/training/zoko-images/route.ts` - Fetch Zoko images
 - `src/app/api/training/examples/route.ts` - Save/fetch training data
+- `src/app/api/training/orders/route.ts` - Lookup Shopify orders by phone
+- `src/lib/shopify/orders.ts` - Shopify orders client
 - `src/types/training.ts` - TypeScript types
 - `supabase/migrations/005_training_examples.sql` - Database table
 
@@ -183,9 +186,10 @@ AI learns from training:
 - More accurate service recommendations over time
 
 ### Next Steps
-1. Run the migration: `005_training_examples.sql` in Supabase
+1. Migration already run: `005_training_examples.sql` ✅
 2. Go to `/training` and train the AI with 20-30 examples
-3. AI will start auto-selecting correct services
+3. Semi-automatic: Click "Use These Services" from Shopify orders
+4. AI will start auto-selecting correct services
 
 ## GitHub
 Repository: https://github.com/moinvirani/isf-cost-estimator
