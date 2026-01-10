@@ -165,19 +165,27 @@ Key functions:
 
 ### AI Training System ✅ COMPLETE
 Training page at `/training` allows staff to:
-1. View images from Zoko CRM
-2. See conversation context
-3. **See customer's Shopify orders** (semi-automatic training)
-4. Click "Use These Services" to pre-fill from orders
-5. Save as training examples
+1. **View grouped images** (all angles of same item shown together)
+2. Click thumbnails to view different angles
+3. See conversation context
+4. **Customers with orders shown first** (prioritized)
+5. **See customer's Shopify orders** (semi-automatic training)
+6. Click "Use These Services" to pre-fill from orders
+7. Save as training examples
+
+Key features:
+- Images sent within 15 min grouped as same item (different angles)
+- "Has Orders" badge on prioritized customers
+- Thumbnail gallery for multi-image items
+- Search filter for services
 
 Files created:
-- `src/app/training/page.tsx` - Training UI with Shopify order lookup
-- `src/app/api/training/zoko-images/route.ts` - Fetch Zoko images
+- `src/app/training/page.tsx` - Training UI with gallery + order lookup
+- `src/app/api/training/zoko-images/route.ts` - Fetch & group Zoko images
 - `src/app/api/training/examples/route.ts` - Save/fetch training data
 - `src/app/api/training/orders/route.ts` - Lookup Shopify orders by phone
 - `src/lib/shopify/orders.ts` - Shopify orders client
-- `src/types/training.ts` - TypeScript types
+- `src/types/training.ts` - TypeScript types (ZokoImage, ZokoConversationForTraining)
 - `supabase/migrations/005_training_examples.sql` - Database table
 
 AI learns from training:
@@ -188,8 +196,9 @@ AI learns from training:
 ### Next Steps
 1. Migration already run: `005_training_examples.sql` ✅
 2. Go to `/training` and train the AI with 20-30 examples
-3. Semi-automatic: Click "Use These Services" from Shopify orders
-4. AI will start auto-selecting correct services
+3. Customers with orders appear first - prioritized!
+4. Click "Use These Services" from Shopify orders for fast training
+5. AI will start auto-selecting correct services
 
 ## GitHub
 Repository: https://github.com/moinvirani/isf-cost-estimator
