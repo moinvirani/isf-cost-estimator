@@ -4,17 +4,35 @@
  * AI Training Page
  *
  * Staff can review Zoko images and select the correct services.
- * Semi-automatic: Shows Shopify orders for the customer to pre-fill services.
- * This builds training data to improve AI recommendations.
+ * Shows grouped images (different angles of same item).
+ * Prioritizes customers with Shopify orders.
+ * Semi-automatic: Shows Shopify orders to pre-fill services.
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import type { ZokoConversationForTraining } from '@/types/training'
+import type { ZokoConversationForTraining, ZokoImage } from '@/types/training'
 import type { ShopifyService } from '@/types/service'
 
 interface SelectedService {
   service: ShopifyService
   quantity: number
+}
+
+// Get images from conversation (handles both new and legacy format)
+function getImages(conversation: ZokoConversationForTraining): ZokoImage[] {
+  if (conversation.images && conversation.images.length > 0) {
+    return conversation.images
+  }
+  // Legacy format fallback
+  if (conversation.imageUrl) {
+    return [{
+      url: conversation.imageUrl,
+      caption: conversation.imageCaption,
+      messageId: conversation.messageId || '',
+      timestamp: conversation.timestamp,
+    }]
+  }
+  return []
 }
 
 // Shopify order from our API
@@ -61,7 +79,12 @@ export default function TrainingPage() {
   // Service search
   const [serviceSearch, setServiceSearch] = useState('')
 
+  // Gallery: track which image is selected (for multi-image items)
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+
   const currentConversation = conversations[currentIndex]
+  const currentImages = currentConversation ? getImages(currentConversation) : []
+  const currentImage = currentImages[selectedImageIndex] || currentImages[0]
 
   // Fetch Shopify orders for current customer
   const fetchCustomerOrders = useCallback(async (phone: string) => {
@@ -197,6 +220,7 @@ export default function TrainingPage() {
       setSavedCount(prev => prev + 1)
       setSelectedServices([])
       setCustomerOrders([])
+      setSelectedImageIndex(0) // Reset gallery
       setCurrentIndex(prev => prev + 1)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to save')
@@ -208,6 +232,7 @@ export default function TrainingPage() {
   const skipImage = () => {
     setSelectedServices([])
     setCustomerOrders([])
+    setSelectedImageIndex(0) // Reset gallery
     setCurrentIndex(prev => prev + 1)
   }
 
@@ -243,12 +268,17 @@ export default function TrainingPage() {
           <div>
             <h1 className="text-xl font-semibold text-gray-900">AI Training</h1>
             <p className="text-sm text-gray-500">
-              Select the correct services for each image
+              Select the correct services for each item
             </p>
           </div>
           <div className="text-right">
             <p className="text-sm text-gray-500">
-              Image {currentIndex + 1} of {conversations.length}
+              Item {currentIndex + 1} of {conversations.length}
+              {currentImages.length > 1 && (
+                <span className="ml-1 text-blue-600">
+                  ({currentImages.length} photos)
+                </span>
+              )}
             </p>
             <p className="text-sm font-medium text-green-600">
               {savedCount} saved
@@ -293,19 +323,62 @@ export default function TrainingPage() {
           <div className="grid md:grid-cols-2 gap-6">
             {/* Left: Image + Context */}
             <div className="space-y-4">
-              {/* Customer Image */}
+              {/* Customer Image Gallery */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                <p className="text-sm text-gray-500 mb-2">
-                  From: {currentConversation.customerName}
-                </p>
-                <img
-                  src={currentConversation.imageUrl}
-                  alt="Customer item"
-                  className="w-full rounded-lg"
-                />
-                {currentConversation.imageCaption && (
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm text-gray-500">
+                    From: {currentConversation.customerName}
+                  </p>
+                  {currentConversation.hasOrders && (
+                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
+                      Has Orders
+                    </span>
+                  )}
+                </div>
+
+                {/* Main Image */}
+                {currentImage && (
+                  <img
+                    src={currentImage.url}
+                    alt="Customer item"
+                    className="w-full rounded-lg"
+                  />
+                )}
+
+                {/* Thumbnail Gallery (when multiple images) */}
+                {currentImages.length > 1 && (
+                  <div className="flex gap-2 mt-3 overflow-x-auto pb-2">
+                    {currentImages.map((img, idx) => (
+                      <button
+                        key={img.messageId}
+                        onClick={() => setSelectedImageIndex(idx)}
+                        className={`flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2 transition-all ${
+                          idx === selectedImageIndex
+                            ? 'border-blue-500 ring-2 ring-blue-200'
+                            : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        <img
+                          src={img.url}
+                          alt={`Angle ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Image count indicator */}
+                {currentImages.length > 1 && (
+                  <p className="text-xs text-gray-400 mt-2 text-center">
+                    Photo {selectedImageIndex + 1} of {currentImages.length} - Click thumbnails to view different angles
+                  </p>
+                )}
+
+                {/* Caption */}
+                {currentImage?.caption && (
                   <p className="mt-2 text-sm text-gray-700 italic">
-                    &quot;{currentConversation.imageCaption}&quot;
+                    &quot;{currentImage.caption}&quot;
                   </p>
                 )}
               </div>

@@ -52,15 +52,29 @@ export interface CorrectService {
 // Zoko Conversation for Training
 // ============================================
 
+// Single image in a group
+export interface ZokoImage {
+  url: string
+  caption?: string
+  messageId: string
+  timestamp: string
+}
+
+// Group of images (same item, different angles)
 export interface ZokoConversationForTraining {
   customerId: string
   customerName: string
   customerPhone?: string // WhatsApp phone number for order lookup
-  imageUrl: string
+  // Multiple images grouped together (different angles of same item)
+  images: ZokoImage[]
+  // Legacy single image support (deprecated)
+  imageUrl?: string
   imageCaption?: string
-  messageId: string
+  messageId?: string
   timestamp: string
-  // Messages around the image (for context)
+  // Whether this customer has Shopify orders (prioritized)
+  hasOrders?: boolean
+  // Messages around the images (for context)
   contextMessages: Array<{
     direction: 'FROM_CUSTOMER' | 'FROM_STORE'
     text: string
