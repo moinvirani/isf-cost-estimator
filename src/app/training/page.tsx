@@ -4,16 +4,33 @@
  * AI Training Page
  *
  * Staff can review Zoko images and select the correct services.
+ * Semi-automatic: Shows Shopify orders for the customer to pre-fill services.
  * This builds training data to improve AI recommendations.
  */
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { ZokoConversationForTraining } from '@/types/training'
 import type { ShopifyService } from '@/types/service'
 
 interface SelectedService {
   service: ShopifyService
   quantity: number
+}
+
+// Shopify order from our API
+interface OrderService {
+  title: string
+  quantity: number
+  price: string
+}
+
+interface ShopifyOrderForTraining {
+  id: string
+  orderNumber: string
+  createdAt: string
+  totalAmount: string
+  currency: string
+  services: OrderService[]
 }
 
 export default function TrainingPage() {
@@ -23,9 +40,13 @@ export default function TrainingPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Shopify services
+  // Shopify services (full list)
   const [services, setServices] = useState<ShopifyService[]>([])
   const [servicesLoading, setServicesLoading] = useState(true)
+
+  // Shopify orders for current customer
+  const [customerOrders, setCustomerOrders] = useState<ShopifyOrderForTraining[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
 
   // Selected services for current image
   const [selectedServices, setSelectedServices] = useState<SelectedService[]>([])
@@ -39,6 +60,40 @@ export default function TrainingPage() {
 
   // Service search
   const [serviceSearch, setServiceSearch] = useState('')
+
+  const currentConversation = conversations[currentIndex]
+
+  // Fetch Shopify orders for current customer
+  const fetchCustomerOrders = useCallback(async (phone: string) => {
+    if (!phone) {
+      setCustomerOrders([])
+      return
+    }
+    setOrdersLoading(true)
+    try {
+      const res = await fetch(`/api/training/orders?phone=${encodeURIComponent(phone)}&limit=5`)
+      const data = await res.json()
+      if (data.success) {
+        setCustomerOrders(data.orders || [])
+      } else {
+        setCustomerOrders([])
+      }
+    } catch (err) {
+      console.error('Failed to load orders:', err)
+      setCustomerOrders([])
+    } finally {
+      setOrdersLoading(false)
+    }
+  }, [])
+
+  // Fetch orders when conversation changes
+  useEffect(() => {
+    if (currentConversation?.customerPhone) {
+      fetchCustomerOrders(currentConversation.customerPhone)
+    } else {
+      setCustomerOrders([])
+    }
+  }, [currentConversation?.customerPhone, fetchCustomerOrders])
 
   // Fetch Zoko images and Shopify services on mount
   useEffect(() => {
@@ -74,8 +129,6 @@ export default function TrainingPage() {
     }
   }
 
-  const currentConversation = conversations[currentIndex]
-
   const toggleService = (service: ShopifyService) => {
     const exists = selectedServices.find(s => s.service.id === service.id)
     if (exists) {
@@ -92,6 +145,24 @@ export default function TrainingPage() {
         s.service.id === serviceId ? { ...s, quantity } : s
       )
     )
+  }
+
+  // Use services from a Shopify order (semi-automatic training)
+  const useOrderServices = (order: ShopifyOrderForTraining) => {
+    const newSelected: SelectedService[] = []
+    for (const orderService of order.services) {
+      // Find matching service in our services list
+      const matchedService = services.find(
+        s => s.title.toLowerCase() === orderService.title.toLowerCase()
+      )
+      if (matchedService) {
+        newSelected.push({
+          service: matchedService,
+          quantity: orderService.quantity,
+        })
+      }
+    }
+    setSelectedServices(newSelected)
   }
 
   const saveAndNext = async () => {
@@ -125,6 +196,7 @@ export default function TrainingPage() {
 
       setSavedCount(prev => prev + 1)
       setSelectedServices([])
+      setCustomerOrders([])
       setCurrentIndex(prev => prev + 1)
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to save')
@@ -135,6 +207,7 @@ export default function TrainingPage() {
 
   const skipImage = () => {
     setSelectedServices([])
+    setCustomerOrders([])
     setCurrentIndex(prev => prev + 1)
   }
 
@@ -194,7 +267,7 @@ export default function TrainingPage() {
             <input
               type="text"
               placeholder="Enter your name..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               onBlur={(e) => setStaffName(e.target.value)}
             />
           </div>
@@ -263,6 +336,58 @@ export default function TrainingPage() {
                   </div>
                 </div>
               )}
+
+              {/* Customer Shopify Orders - Semi-automatic training */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">
+                  Shopify Orders
+                  {currentConversation.customerPhone && (
+                    <span className="ml-2 text-xs text-gray-400">
+                      ({currentConversation.customerPhone})
+                    </span>
+                  )}
+                </h3>
+                {ordersLoading ? (
+                  <p className="text-sm text-gray-500">Loading orders...</p>
+                ) : customerOrders.length === 0 ? (
+                  <p className="text-sm text-gray-500">No orders found for this customer</p>
+                ) : (
+                  <div className="space-y-3">
+                    {customerOrders.map((order) => (
+                      <div
+                        key={order.id}
+                        className="border border-gray-200 rounded-lg p-3"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <div>
+                            <span className="font-medium text-gray-900">{order.orderNumber}</span>
+                            <span className="ml-2 text-xs text-gray-500">
+                              {new Date(order.createdAt).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <span className="text-sm font-medium text-gray-900">
+                            {order.currency} {parseFloat(order.totalAmount).toFixed(0)}
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-600 mb-2">
+                          {order.services.map((s, i) => (
+                            <span key={i}>
+                              {s.quantity > 1 ? `${s.quantity}x ` : ''}{s.title}
+                              {i < order.services.length - 1 ? ', ' : ''}
+                            </span>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => useOrderServices(order)}
+                          className="w-full py-2 px-3 bg-green-50 text-green-700 rounded-lg text-sm font-medium hover:bg-green-100 border border-green-200"
+                        >
+                          Use These Services
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Right: Service Selection */}
@@ -277,7 +402,7 @@ export default function TrainingPage() {
                 placeholder="Search services... (e.g. suede, heel, bag)"
                 value={serviceSearch}
                 onChange={(e) => setServiceSearch(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-3 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-3 text-sm text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
 
               {servicesLoading ? (

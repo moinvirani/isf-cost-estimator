@@ -13,3 +13,9 @@ export {
   // Deprecated - use filterServicesForItem
   filterServicesForCategory,
 } from './services'
+export {
+  getOrdersByPhone,
+  extractServicesFromOrder,
+  type ShopifyOrder,
+  type ShopifyOrderLineItem,
+} from './orders'

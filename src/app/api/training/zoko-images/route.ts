@@ -68,6 +68,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<FetchZokoI
           conversations.push({
             customerId: customer.id,
             customerName: customer.name,
+            customerPhone: customer.channelId, // WhatsApp phone number
             imageUrl: imgMsg.mediaUrl,
             imageCaption: imgMsg.fileCaption || undefined,
             messageId: imgMsg.key.msgId,

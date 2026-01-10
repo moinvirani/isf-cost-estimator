@@ -55,6 +55,7 @@ export interface CorrectService {
 export interface ZokoConversationForTraining {
   customerId: string
   customerName: string
+  customerPhone?: string // WhatsApp phone number for order lookup
   imageUrl: string
   imageCaption?: string
   messageId: string
