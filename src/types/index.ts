@@ -37,3 +37,13 @@ export type {
   NewItemService,
   AddServiceRequest,
 } from './service'
+
+// Training types
+export type {
+  TrainingExample,
+  CorrectService,
+  ZokoConversationForTraining,
+  FetchZokoImagesResponse,
+  SaveTrainingExampleRequest,
+  NewTrainingExample,
+} from './training'

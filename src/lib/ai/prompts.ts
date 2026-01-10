@@ -45,30 +45,79 @@ export const ANALYSIS_USER_PROMPT = `Analyze this image and provide a detailed a
   "notes": "<any additional observations about the item>"
 }
 
-Common services ISF offers:
-- Full Restoration
-- Deep Cleaning
-- Sole Replacement
-- Heel Replacement
-- Color Restoration
-- Stain Removal
-- Scratch Repair
-- Leather Conditioning
-- Zipper Repair
-- Hardware Polishing
-- Re-stitching
-- Stretching
-- Waterproofing
+ISF Services (use EXACT names from this list):
+MEN'S SHOES:
+- Men's | Heel Top-Lift Replacement (AED 225)
+- Men's | Resoling Services (AED 225)
+- Men's | Gluing (AED 95)
+- Shampoo Suede (AED 125) - for suede/nubuck cleaning
+- Stitching (AED 115)
 
-Be specific about issues. If the image is unclear, set confidence lower. If you cannot identify something, make your best assessment and note uncertainty.`
+WOMEN'S SHOES:
+- Women's | Glissoire (AED 225)
+- Women's | Sole Protector | Vibram (AED 185)
+- Women's | Resoling (AED 375)
+- Shampoo Suede (AED 125) - for suede/nubuck cleaning
+- Stitching (AED 115)
+
+SNEAKERS:
+- Sneaker | Spa (AED 125) - basic cleaning
+- Sneaker | Color Restoration (AED 275)
+- Sneaker | Full Rubber Resoling (AED 650)
+
+BAGS:
+- Bags I Cleaning & Refresh (AED 125)
+- Bags | Zipper Repair (AED 175)
+- Bags | Lining Repair/Change (AED 375)
+- Bags | Gold Plating (AED 215)
+- Bags | Color Restoration (AED 275)
+
+IMPORTANT: For suggested_services, recommend the MINIMUM services needed. Most items need just 1-2 services:
+- Dirty suede shoe → "Shampoo Suede"
+- Worn heel on men's shoe → "Men's | Heel Top-Lift Replacement"
+- Scuffed sneakers → "Sneaker | Spa"
+- Dirty bag → "Bags I Cleaning & Refresh"
+
+Be specific about issues. If unclear, set confidence lower.`
+
+/**
+ * Training example format for few-shot learning
+ */
+interface TrainingExampleForPrompt {
+  ai_category?: string
+  ai_material?: string
+  ai_condition?: string
+  correct_services: Array<{ service_name: string }>
+}
+
+/**
+ * Build few-shot examples from training data
+ */
+function buildFewShotExamples(examples: TrainingExampleForPrompt[]): string {
+  if (!examples || examples.length === 0) return ''
+
+  const exampleStrings = examples.slice(0, 5).map((ex, i) => {
+    const services = ex.correct_services.map(s => s.service_name).join(', ')
+    return `Example ${i + 1}: ${ex.ai_category || 'item'} (${ex.ai_material || 'leather'}, ${ex.ai_condition || 'fair'} condition) → Services: ${services}`
+  })
+
+  return `\n\nLEARNED EXAMPLES from past assessments:\n${exampleStrings.join('\n')}\n\nUse these examples to guide your service recommendations.`
+}
 
 /**
  * Builds the messages array for the OpenAI API call.
  *
  * @param imageUrl - Public URL of the image to analyze
+ * @param trainingExamples - Optional training examples for few-shot learning
  * @returns Messages array ready for OpenAI chat completion
  */
-export function buildAnalysisMessages(imageUrl: string) {
+export function buildAnalysisMessages(
+  imageUrl: string,
+  trainingExamples?: TrainingExampleForPrompt[]
+) {
+  const fewShotSection = buildFewShotExamples(trainingExamples || [])
+  const enhancedPrompt = ANALYSIS_USER_PROMPT + fewShotSection
+
   return [
     {
       role: 'system' as const,
@@ -79,13 +128,13 @@ export function buildAnalysisMessages(imageUrl: string) {
       content: [
         {
           type: 'text' as const,
-          text: ANALYSIS_USER_PROMPT,
+          text: enhancedPrompt,
         },
         {
           type: 'image_url' as const,
           image_url: {
             url: imageUrl,
-            detail: 'high' as const, // Use high detail for better analysis
+            detail: 'high' as const,
           },
         },
       ],

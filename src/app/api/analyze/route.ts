@@ -5,12 +5,20 @@
  *
  * Receives image URLs and returns AI analysis results.
  * Uses GPT-4 Vision to analyze shoes/bags/leather goods.
+ * Includes few-shot examples from training data to improve recommendations.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 import openai from '@/lib/ai/openai'
 import { buildAnalysisMessages } from '@/lib/ai/prompts'
 import type { AIAnalysisResult } from '@/types/item'
+
+// Supabase client for fetching training examples
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 // Request body type
 interface AnalyzeRequest {
@@ -22,6 +30,25 @@ interface AnalyzeResponse {
   success: boolean
   analysis?: AIAnalysisResult
   error?: string
+}
+
+/**
+ * Fetch recent training examples for few-shot learning
+ */
+async function fetchTrainingExamples() {
+  try {
+    const { data } = await supabase
+      .from('training_examples')
+      .select('ai_category, ai_material, ai_condition, correct_services')
+      .eq('status', 'verified')
+      .order('created_at', { ascending: false })
+      .limit(10)
+
+    return data || []
+  } catch (error) {
+    console.error('Failed to fetch training examples:', error)
+    return []
+  }
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeResponse>> {
@@ -46,8 +73,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
       )
     }
 
-    // Build messages for GPT-4 Vision
-    const messages = buildAnalysisMessages(body.imageUrl)
+    // Fetch training examples for few-shot learning
+    const trainingExamples = await fetchTrainingExamples()
+
+    // Build messages for GPT-4 Vision (with training examples)
+    const messages = buildAnalysisMessages(body.imageUrl, trainingExamples)
 
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
