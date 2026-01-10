@@ -3,7 +3,7 @@
 ## Project Overview
 **ISF Cost Estimator** is an AI-powered internal tool for Italian Shoe Factory (ISF) staff. It streamlines the estimation process by analyzing customer photos of shoes and bags, suggesting repair/cleaning services, and generating a Shopify draft order for checkout.
 
-## Current Status: M2 Complete, M3 Next
+## Current Status: M4 Complete, M5 Next
 
 ### Completed
 - **M1: Foundation** ✅
@@ -17,11 +17,25 @@
   - Image preview gallery
   - Storage RLS policies configured
 
-### Next Up: M3 - AI Analysis
-- Connect OpenAI GPT-4 Vision
-- Analyze uploaded images for: item type, material, condition, issues
-- Display analysis results in item cards
-- Suggest services based on analysis
+- **M3: AI Analysis** ✅
+  - OpenAI GPT-4o Vision integration
+  - API route for image analysis (`/api/analyze`)
+  - ItemCard component showing analysis results
+  - ConfidenceIndicator component
+  - Detects: item type, material, condition, issues, suggested services
+
+- **M4: Shopify Integration** ✅
+  - Shopify Admin API client (`/lib/shopify/client.ts`)
+  - API route to fetch service products (`/api/services`)
+  - ServiceSelector component with AI-suggested services highlighted
+  - Price calculation engine with material/condition modifiers
+  - PriceSummary component with totals breakdown
+
+### Next Up: M5 - Draft Order Creation
+- Create API route to generate Shopify draft orders
+- Build customer info input (name, phone, email)
+- Wire up "Generate Draft Order" button
+- Show order confirmation with Shopify link
 
 ## Tech Stack
 - **Framework**: Next.js 14+ (App Router)
@@ -40,12 +54,33 @@ isf-cost-estimator/
 │   ├── app/
 │   │   ├── page.tsx              # Main estimation workflow
 │   │   ├── layout.tsx            # Root layout
-│   │   └── api/                  # API routes (to be added)
+│   │   └── api/
+│   │       ├── analyze/
+│   │       │   └── route.ts      # AI analysis endpoint
+│   │       └── services/
+│   │           └── route.ts      # Shopify services endpoint
 │   ├── components/
 │   │   └── estimation/
-│   │       ├── image-upload.tsx  # Camera + drag/drop upload
+│   │       ├── image-upload.tsx      # Camera + drag/drop upload
+│   │       ├── item-card.tsx         # Item with analysis results
+│   │       ├── confidence-indicator.tsx  # AI confidence bar
+│   │       ├── service-selector.tsx  # Service selection with AI hints
+│   │       ├── price-summary.tsx     # Price totals + order button
 │   │       └── index.ts
 │   ├── lib/
+│   │   ├── ai/
+│   │   │   ├── openai.ts         # OpenAI client
+│   │   │   └── prompts.ts        # Analysis prompts
+│   │   ├── shopify/
+│   │   │   ├── client.ts         # Shopify Admin API client
+│   │   │   ├── services.ts       # Fetch service products
+│   │   │   └── index.ts
+│   │   ├── pricing/
+│   │   │   ├── calculator.ts     # Price calculation + modifiers
+│   │   │   └── index.ts
+│   │   ├── zoko/
+│   │   │   ├── client.ts         # Zoko CRM API client
+│   │   │   └── index.ts
 │   │   └── supabase/
 │   │       ├── client.ts         # Supabase client
 │   │       └── storage.ts        # Image upload functions
@@ -78,6 +113,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
 OPENAI_API_KEY=sk-...
 SHOPIFY_STORE_DOMAIN=your-store.myshopify.com
 SHOPIFY_ADMIN_ACCESS_TOKEN=shpat_...
+ZOKO_API_KEY=your-zoko-api-key
 ```
 
 ## Commands
@@ -87,24 +123,52 @@ SHOPIFY_ADMIN_ACCESS_TOKEN=shpat_...
 
 ## Core Workflow (Target)
 1. Staff uploads photos → **DONE**
-2. AI analyzes items → **NEXT (M3)**
-3. System suggests services → M4
-4. Staff reviews/edits → M4
-5. Generate Shopify draft order → M5
+2. AI analyzes items → **DONE**
+3. System suggests services → **DONE**
+4. Staff reviews/edits → **DONE**
+5. Generate Shopify draft order → **NEXT (M5)**
 6. Generate customer message → M6
 
 ## Key Files to Know
-- `src/app/page.tsx` - Main page with upload UI
-- `src/components/estimation/image-upload.tsx` - Upload component
-- `src/lib/supabase/storage.ts` - Image upload to Supabase
-- `src/types/item.ts` - AI analysis result types
+- `src/app/page.tsx` - Main page with full workflow
+- `src/app/api/analyze/route.ts` - AI analysis API endpoint
+- `src/app/api/services/route.ts` - Shopify services API endpoint
+- `src/components/estimation/service-selector.tsx` - Service selection UI
+- `src/lib/shopify/client.ts` - Shopify Admin API client
+- `src/lib/pricing/calculator.ts` - Price calculations with modifiers
 - `tasks/prd.json` - Full task breakdown by milestone
 
 ## Development Notes
 - User is a beginner - explain code clearly
 - No AI slop - every line intentional
 - Mobile-first design (staff use phones/tablets)
-- Shopify services are products tagged "service"
+
+## Shopify Tag Structure
+Services are identified by the `Repair` tag. Category filtering uses:
+- `Men's Repair` → Men's shoe services
+- `Women's Repair` → Women's shoe services
+- `Sneaker Repair` → Sneaker services
+- `bag repair` → Bag services
+
+Products can have multiple tags (e.g., "Stitching" has all category tags, shown for all items).
+
+## Zoko CRM Integration
+Client created at `src/lib/zoko/client.ts`. API access confirmed:
+- **38,418 customers** with message history
+- **Image messages** with `mediaUrl` (Google Cloud Storage)
+- **Conversation context** to find quoted prices after images
+
+Key functions:
+- `getCustomers(page)` - Paginated customer list
+- `getCustomerMessages(customerId)` - Full message history
+- `findConversationsWithImages(startPage, max)` - Find convos with images
+
+### Next: AI Training System
+1. Build training data extractor from Zoko (images + quoted services)
+2. Create training UI for manual corrections
+3. Store training examples in Supabase
+4. Update AI prompt with few-shot examples from training data
+5. Auto-select recommended services instead of showing all
 
 ## GitHub
 Repository: https://github.com/moinvirani/isf-cost-estimator

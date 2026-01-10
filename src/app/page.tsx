@@ -10,9 +10,12 @@
  * 4. Generate draft order
  */
 
-import { useState } from 'react'
-import { ImageUpload } from '@/components/estimation'
+import { useState, useEffect } from 'react'
+import { ImageUpload, ItemCard, ServiceSelector, PriceSummary } from '@/components/estimation'
 import { uploadImages } from '@/lib/supabase/storage'
+import { calculatePrices } from '@/lib/pricing'
+import type { AIAnalysisResult } from '@/types/item'
+import type { ShopifyService } from '@/types/service'
 
 // Type for our uploaded images (before Supabase upload)
 interface LocalImage {
@@ -21,18 +24,60 @@ interface LocalImage {
   previewUrl: string
 }
 
-// Type for images after Supabase upload
+// Selected service with quantity
+interface SelectedService {
+  service: ShopifyService
+  quantity: number
+  aiSuggested: boolean
+}
+
+// Type for images after Supabase upload, with analysis and services
 interface UploadedImage {
   id: string
   url: string
   path: string
+  analysis: AIAnalysisResult | null
+  isAnalyzing: boolean
+  analysisError: string | null
+  selectedServices: SelectedService[]
 }
 
 export default function Home() {
+  // Image states
   const [localImages, setLocalImages] = useState<LocalImage[]>([])
   const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([])
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+
+  // Shopify services state
+  const [shopifyServices, setShopifyServices] = useState<ShopifyService[]>([])
+  const [servicesLoading, setServicesLoading] = useState(true)
+  const [servicesError, setServicesError] = useState<string | null>(null)
+
+  // Fetch Shopify services on mount
+  useEffect(() => {
+    async function fetchServices() {
+      try {
+        const response = await fetch('/api/services')
+        const data = await response.json()
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || 'Failed to fetch services')
+        }
+
+        setShopifyServices(data.services)
+      } catch (error) {
+        console.error('Error fetching services:', error)
+        setServicesError(
+          error instanceof Error ? error.message : 'Failed to load services'
+        )
+      } finally {
+        setServicesLoading(false)
+      }
+    }
+
+    fetchServices()
+  }, [])
 
   // Handle image selection (local preview)
   const handleImagesChange = (images: LocalImage[]) => {
@@ -40,7 +85,56 @@ export default function Home() {
     setUploadError(null)
   }
 
-  // Handle upload to Supabase
+  // Analyze a single image
+  const analyzeImage = async (imageId: string, imageUrl: string) => {
+    // Set analyzing state for this image
+    setUploadedImages((prev) =>
+      prev.map((img) =>
+        img.id === imageId
+          ? { ...img, isAnalyzing: true, analysisError: null }
+          : img
+      )
+    )
+
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Analysis failed')
+      }
+
+      // Update with analysis results
+      setUploadedImages((prev) =>
+        prev.map((img) =>
+          img.id === imageId
+            ? { ...img, analysis: data.analysis, isAnalyzing: false }
+            : img
+        )
+      )
+    } catch (error) {
+      console.error('Analysis error:', error)
+      setUploadedImages((prev) =>
+        prev.map((img) =>
+          img.id === imageId
+            ? {
+                ...img,
+                isAnalyzing: false,
+                analysisError:
+                  error instanceof Error ? error.message : 'Analysis failed',
+              }
+            : img
+        )
+      )
+    }
+  }
+
+  // Handle upload to Supabase and trigger analysis
   const handleUpload = async () => {
     if (localImages.length === 0) return
 
@@ -52,11 +146,15 @@ export default function Home() {
       const files = localImages.map((img) => img.file)
       const results = await uploadImages(files)
 
-      // Map results to our format
+      // Map results to our format with initial analysis state
       const uploaded: UploadedImage[] = results.map((result, index) => ({
         id: localImages[index].id,
         url: result.url,
         path: result.path,
+        analysis: null,
+        isAnalyzing: false,
+        analysisError: null,
+        selectedServices: [],
       }))
 
       setUploadedImages(uploaded)
@@ -75,8 +173,89 @@ export default function Home() {
     }
   }
 
+  // Analyze all uploaded images
+  const handleAnalyzeAll = () => {
+    uploadedImages.forEach((image) => {
+      if (!image.analysis && !image.isAnalyzing) {
+        analyzeImage(image.id, image.url)
+      }
+    })
+  }
+
+  // Retry analysis for a single image
+  const handleRetryAnalysis = (imageId: string) => {
+    const image = uploadedImages.find((img) => img.id === imageId)
+    if (image) {
+      analyzeImage(image.id, image.url)
+    }
+  }
+
+  // Update selected services for an item
+  const handleServiceSelectionChange = (
+    imageId: string,
+    selectedServices: SelectedService[]
+  ) => {
+    setUploadedImages((prev) =>
+      prev.map((img) =>
+        img.id === imageId ? { ...img, selectedServices } : img
+      )
+    )
+  }
+
+  // Calculate total price across all items
+  const calculateTotalPrices = () => {
+    // Combine all selected services from all items
+    const allSelectedServices = uploadedImages.flatMap((img) => {
+      if (!img.analysis || img.selectedServices.length === 0) return []
+
+      // Calculate with modifiers based on item's material/condition
+      return calculatePrices(
+        img.selectedServices,
+        img.analysis.material,
+        img.analysis.condition
+      )
+    })
+
+    // If no items have services selected, return empty result
+    if (allSelectedServices.length === 0) {
+      return {
+        lineItems: [],
+        subtotal: 0,
+        modifiersTotal: 0,
+        grandTotal: 0,
+        currency: 'AED',
+      }
+    }
+
+    // Aggregate all calculations
+    const allLineItems = allSelectedServices.flatMap((calc) => calc.lineItems)
+    const totalSubtotal = allSelectedServices.reduce((sum, calc) => sum + calc.subtotal, 0)
+    const totalModifiers = allSelectedServices.reduce((sum, calc) => sum + calc.modifiersTotal, 0)
+    const totalGrand = allSelectedServices.reduce((sum, calc) => sum + calc.grandTotal, 0)
+
+    return {
+      lineItems: allLineItems,
+      subtotal: totalSubtotal,
+      modifiersTotal: totalModifiers,
+      grandTotal: totalGrand,
+      currency: 'AED',
+    }
+  }
+
   const hasLocalImages = localImages.length > 0
   const hasUploadedImages = uploadedImages.length > 0
+  const hasUnanalyzedImages = uploadedImages.some(
+    (img) => !img.analysis && !img.isAnalyzing && !img.analysisError
+  )
+  const isAnyAnalyzing = uploadedImages.some((img) => img.isAnalyzing)
+  const allAnalyzed = uploadedImages.length > 0 && uploadedImages.every(
+    (img) => img.analysis !== null
+  )
+  const hasAnyServicesSelected = uploadedImages.some(
+    (img) => img.selectedServices.length > 0
+  )
+
+  const priceCalculation = calculateTotalPrices()
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -133,42 +312,153 @@ export default function Home() {
           )}
         </section>
 
-        {/* Step 2: Uploaded Images (after upload) */}
+        {/* Step 2: AI Analysis */}
         {hasUploadedImages && (
           <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-            <h2 className="text-lg font-medium text-gray-900 mb-4">
-              Step 2: Review Items
-            </h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-medium text-gray-900">
+                Step 2: AI Analysis
+              </h2>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {uploadedImages.map((image) => (
-                <div
-                  key={image.id}
-                  className="aspect-square rounded-lg overflow-hidden bg-gray-100 border border-gray-200"
+              {/* Analyze Button */}
+              {hasUnanalyzedImages && (
+                <button
+                  onClick={handleAnalyzeAll}
+                  disabled={isAnyAnalyzing}
+                  className={`
+                    px-4 py-2 rounded-lg font-medium text-sm
+                    transition-colors
+                    ${isAnyAnalyzing
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }
+                  `}
                 >
-                  <img
-                    src={image.url}
-                    alt="Uploaded item"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
+                  {isAnyAnalyzing ? 'Analyzing...' : 'Analyze All'}
+                </button>
+              )}
+
+              {/* All analyzed indicator */}
+              {allAnalyzed && (
+                <span className="text-sm text-green-600 font-medium">
+                  All items analyzed
+                </span>
+              )}
+            </div>
+
+            {/* Item Cards */}
+            <div className="space-y-4">
+              {uploadedImages.map((image) => (
+                <ItemCard
+                  key={image.id}
+                  imageUrl={image.url}
+                  analysis={image.analysis}
+                  isAnalyzing={image.isAnalyzing}
+                  error={image.analysisError}
+                  onRetry={() => handleRetryAnalysis(image.id)}
+                />
               ))}
             </div>
 
-            <p className="mt-4 text-sm text-gray-500">
-              {uploadedImages.length} image{uploadedImages.length !== 1 ? 's' : ''} uploaded.
-              AI analysis coming soon!
-            </p>
+            {/* Analysis tips */}
+            {hasUnanalyzedImages && !isAnyAnalyzing && (
+              <p className="mt-4 text-sm text-gray-500 text-center">
+                Click &quot;Analyze All&quot; to get AI-powered service recommendations
+              </p>
+            )}
           </section>
         )}
 
-        {/* Coming Soon: AI Analysis */}
-        {hasUploadedImages && (
-          <section className="bg-gray-100 rounded-xl border border-gray-200 p-4 text-center">
-            <p className="text-gray-500 text-sm">
-              🚧 AI analysis will appear here in the next phase
-            </p>
+        {/* Step 3: Service Selection */}
+        {allAnalyzed && (
+          <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <h2 className="text-lg font-medium text-gray-900 mb-4">
+              Step 3: Select Services
+            </h2>
+
+            {/* Services loading state */}
+            {servicesLoading && (
+              <div className="text-center py-8">
+                <div className="inline-block h-6 w-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-gray-500 mt-2">Loading services...</p>
+              </div>
+            )}
+
+            {/* Services error state */}
+            {servicesError && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {servicesError}
+              </div>
+            )}
+
+            {/* Service selectors for each item */}
+            {!servicesLoading && !servicesError && (
+              <div className="space-y-6">
+                {uploadedImages.map((image, index) => (
+                  <div key={image.id} className="border-b border-gray-200 pb-6 last:border-0 last:pb-0">
+                    {/* Item header */}
+                    <div className="flex items-center gap-3 mb-3">
+                      <img
+                        src={image.url}
+                        alt={`Item ${index + 1}`}
+                        className="w-12 h-12 rounded-lg object-cover"
+                      />
+                      <div>
+                        <h3 className="font-medium text-gray-900">
+                          Item {index + 1}: {image.analysis?.sub_type || image.analysis?.category}
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          {image.analysis?.material?.replace('_', ' ')} - {image.analysis?.condition} condition
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Service selector */}
+                    <ServiceSelector
+                      services={shopifyServices}
+                      suggestedServiceNames={image.analysis?.suggested_services || []}
+                      selectedServices={image.selectedServices}
+                      onSelectionChange={(selected) =>
+                        handleServiceSelectionChange(image.id, selected)
+                      }
+                      itemCategory={image.analysis?.category}
+                      itemSubType={image.analysis?.sub_type}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
+        )}
+
+        {/* Step 4: Price Summary */}
+        {allAnalyzed && hasAnyServicesSelected && (
+          <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+            <h2 className="text-lg font-medium text-gray-900 mb-4">
+              Step 4: Review & Generate Order
+            </h2>
+
+            <PriceSummary
+              lineItems={priceCalculation.lineItems}
+              subtotal={priceCalculation.subtotal}
+              modifiersTotal={priceCalculation.modifiersTotal}
+              grandTotal={priceCalculation.grandTotal}
+              currency={priceCalculation.currency}
+              onGenerateOrder={() => {
+                // Placeholder for M5 - Shopify draft order creation
+                alert('Draft order generation coming in the next phase!')
+              }}
+            />
+          </section>
+        )}
+
+        {/* Hint when no services selected */}
+        {allAnalyzed && !hasAnyServicesSelected && !servicesLoading && !servicesError && (
+          <div className="text-center py-4">
+            <p className="text-sm text-gray-500">
+              Select services above to see pricing summary
+            </p>
+          </div>
         )}
       </div>
     </main>
