@@ -2,8 +2,8 @@
  * GET /api/training/zoko-images
  *
  * Fetches conversations with images from Zoko CRM.
- * Groups images sent within 15 minutes as the same item (different angles).
- * Prioritizes customers who have Shopify orders.
+ * Groups images by time window (images sent within 2 hours = same item).
+ * Orders are loaded lazily via separate API call for better performance.
  *
  * Query params:
  * - page: Starting page (default: 1, higher = more recent)
@@ -12,11 +12,10 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getCustomers, getCustomerMessages, isZokoConfigured } from '@/lib/zoko'
-import { getOrdersByPhone, isShopifyConfigured } from '@/lib/shopify'
 import type { ZokoConversationForTraining, ZokoImage, FetchZokoImagesResponse } from '@/types/training'
 
-// Time window to group images (15 minutes in milliseconds)
-const IMAGE_GROUP_WINDOW_MS = 15 * 60 * 1000
+// Time window for grouping images (2 hours = same item, different angles)
+const IMAGE_GROUP_WINDOW_MS = 2 * 60 * 60 * 1000
 
 /**
  * Group consecutive images sent within the time window
@@ -104,95 +103,97 @@ export async function GET(request: NextRequest): Promise<NextResponse<FetchZokoI
     let currentPage = startPage
     let totalPages = 0
 
-    // Fetch more than needed so we can prioritize those with orders
-    const fetchLimit = limit * 3
-
     // Fetch conversations with images
-    while (allConversations.length < fetchLimit) {
+    // Process in batches for better performance
+    while (allConversations.length < limit) {
       const { customers, totalPages: tp } = await getCustomers(currentPage)
       totalPages = tp
 
-      for (const customer of customers) {
-        // Skip customers without incoming messages
-        if (!customer.lastIncomingMessageAt) continue
+      // Filter to customers with incoming messages
+      const activeCustomers = customers.filter(c => c.lastIncomingMessageAt)
 
-        // Get messages for this customer
-        const messages = await getCustomerMessages(customer.id)
+      // Fetch messages for all customers in parallel (batch of 5 at a time)
+      const batchSize = 5
+      for (let i = 0; i < activeCustomers.length; i += batchSize) {
+        const batch = activeCustomers.slice(i, i + batchSize)
 
-        if (!Array.isArray(messages)) continue
+        const messagesResults = await Promise.all(
+          batch.map(async (customer) => {
+            try {
+              const messages = await getCustomerMessages(customer.id)
+              return { customer, messages: Array.isArray(messages) ? messages : [] }
+            } catch {
+              return { customer, messages: [] }
+            }
+          })
+        )
 
-        // Find image messages from customer
-        const imageMessages = messages
-          .filter((m) => m.type === 'image' && m.direction === 'FROM_CUSTOMER' && m.mediaUrl)
-          .map((m) => ({
-            mediaUrl: m.mediaUrl,
-            fileCaption: m.fileCaption,
-            msgId: m.key.msgId,
-            createdAt: m.createdAt,
-          }))
+        // Process each customer's messages
+        for (const { customer, messages } of messagesResults) {
+          if (messages.length === 0) continue
 
-        if (imageMessages.length === 0) continue
-
-        // Group images by item (different angles within 15 min window)
-        const imageGroups = groupImagesByItem(imageMessages)
-
-        // Check if customer has Shopify orders
-        let hasOrders = false
-        if (isShopifyConfigured() && customer.channelId) {
-          try {
-            const orders = await getOrdersByPhone(customer.channelId, 1)
-            hasOrders = orders.length > 0
-          } catch {
-            // Ignore order lookup errors
-          }
-        }
-
-        // Create a conversation entry for each image group (each item)
-        for (const imageGroup of imageGroups) {
-          // Get context messages around the first image in the group
-          const firstImgMsgId = imageGroup[0].messageId
-          const msgIndex = messages.findIndex((m) => m.key.msgId === firstImgMsgId)
-          const contextStart = Math.max(0, msgIndex - 5)
-          const contextEnd = Math.min(messages.length, msgIndex + 6)
-          const contextMessages = messages
-            .slice(contextStart, contextEnd)
-            .filter((m) => m.type === 'text' || m.type === 'template')
+          // Find image messages from customer
+          const imageMessages = messages
+            .filter((m) => m.type === 'image' && m.direction === 'FROM_CUSTOMER' && m.mediaUrl)
             .map((m) => ({
-              direction: m.direction as 'FROM_CUSTOMER' | 'FROM_STORE',
-              text: m.text || m.fileCaption || '',
-              timestamp: m.createdAt,
+              mediaUrl: m.mediaUrl,
+              fileCaption: m.fileCaption,
+              msgId: m.key.msgId,
+              createdAt: m.createdAt,
             }))
 
-          allConversations.push({
-            customerId: customer.id,
-            customerName: customer.name,
-            customerPhone: customer.channelId,
-            images: imageGroup,
-            // Keep legacy fields for backwards compatibility
-            imageUrl: imageGroup[0].url,
-            imageCaption: imageGroup[0].caption,
-            messageId: imageGroup[0].messageId,
-            timestamp: imageGroup[0].timestamp,
-            hasOrders,
-            contextMessages,
-          })
+          if (imageMessages.length === 0) continue
 
-          if (allConversations.length >= fetchLimit) break
+          // Group images by time window (2 hours = same item)
+          const imageGroups = groupImagesByItem(imageMessages)
+
+          // Create a conversation entry for each image group (each item)
+          for (const imageGroup of imageGroups) {
+            // Get context messages around the first image in the group
+            const firstImgMsgId = imageGroup[0].messageId
+            const msgIndex = messages.findIndex((m) => m.key.msgId === firstImgMsgId)
+            const contextStart = Math.max(0, msgIndex - 5)
+            const contextEnd = Math.min(messages.length, msgIndex + 6)
+            const contextMessages = messages
+              .slice(contextStart, contextEnd)
+              .filter((m) => m.type === 'text' || m.type === 'template')
+              .map((m) => ({
+                direction: m.direction as 'FROM_CUSTOMER' | 'FROM_STORE',
+                text: m.text || m.fileCaption || '',
+                timestamp: m.createdAt,
+              }))
+
+            allConversations.push({
+              customerId: customer.id,
+              customerName: customer.name,
+              customerPhone: customer.channelId,
+              images: imageGroup,
+              // Keep legacy fields for backwards compatibility
+              imageUrl: imageGroup[0].url,
+              imageCaption: imageGroup[0].caption,
+              messageId: imageGroup[0].messageId,
+              timestamp: imageGroup[0].timestamp,
+              // Orders loaded lazily via separate API call
+              hasOrders: false,
+              matchingOrders: [],
+              contextMessages,
+            })
+
+            if (allConversations.length >= limit) break
+          }
+
+          if (allConversations.length >= limit) break
         }
 
-        if (allConversations.length >= fetchLimit) break
+        if (allConversations.length >= limit) break
       }
 
       currentPage++
       if (currentPage > totalPages) break
     }
 
-    // Sort: customers with orders first, then by timestamp (newest first)
+    // Sort by timestamp (newest first)
     allConversations.sort((a, b) => {
-      // Prioritize those with orders
-      if (a.hasOrders && !b.hasOrders) return -1
-      if (!a.hasOrders && b.hasOrders) return 1
-      // Then by timestamp (newest first)
       return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     })
 
@@ -202,7 +203,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<FetchZokoI
     return NextResponse.json({
       success: true,
       conversations,
-      hasMore: currentPage <= totalPages || allConversations.length > limit,
+      hasMore: currentPage <= totalPages,
       nextPage: currentPage,
     })
   } catch (error) {
