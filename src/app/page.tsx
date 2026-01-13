@@ -11,11 +11,73 @@
  */
 
 import { useState, useEffect } from 'react'
-import { ImageUpload, ItemCard, ServiceSelector, PriceSummary } from '@/components/estimation'
+import { ImageUpload, ItemCard, ServiceSelector, PriceSummary, CustomerForm, OrderSuccess } from '@/components/estimation'
+import type { CustomerInfo } from '@/components/estimation'
 import { uploadImages } from '@/lib/supabase/storage'
 import { calculatePrices } from '@/lib/pricing'
+import { filterServicesForItem } from '@/lib/shopify'
+import { generateCustomerMessage } from '@/lib/estimation/message-template'
 import type { AIAnalysisResult } from '@/types/item'
 import type { ShopifyService } from '@/types/service'
+
+// Order result from draft order creation
+interface OrderResult {
+  draftOrderId: string
+  invoiceUrl: string
+  totalPrice: string
+  customerMessage: string
+}
+
+// Helper to format category for display
+function formatCategory(category?: string, subType?: string): string {
+  if (!category) return 'Item'
+
+  const categoryLabels: Record<string, string> = {
+    shoes: 'Shoes',
+    bags: 'Bag',
+    other_leather: 'Leather Item',
+  }
+
+  const subTypeLabels: Record<string, string> = {
+    mens: "Men's",
+    womens: "Women's",
+    kids: "Kids'",
+    unisex: 'Unisex',
+    sneakers: 'Sneakers',
+    handbag: 'Handbag',
+    clutch: 'Clutch',
+    backpack: 'Backpack',
+    wallet: 'Wallet',
+    briefcase: 'Briefcase',
+    tote: 'Tote',
+    belt: 'Belt',
+    jacket: 'Jacket',
+    watch_strap: 'Watch Strap',
+    other: 'Other',
+  }
+
+  const cat = categoryLabels[category] || category
+  const sub = subType ? (subTypeLabels[subType] || subType) : ''
+
+  return sub ? `${sub} ${cat}` : cat
+}
+
+// Helper to format material for display
+function formatMaterial(material?: string): string {
+  if (!material) return ''
+
+  const labels: Record<string, string> = {
+    smooth_leather: 'Smooth Leather',
+    suede: 'Suede',
+    nubuck: 'Nubuck',
+    patent: 'Patent Leather',
+    exotic: 'Exotic Leather',
+    fabric: 'Fabric',
+    synthetic: 'Synthetic',
+    mixed: 'Mixed Materials',
+  }
+  return labels[material] || material
+}
 
 // Type for our uploaded images (before Supabase upload)
 interface LocalImage {
@@ -54,6 +116,11 @@ export default function Home() {
   const [shopifyServices, setShopifyServices] = useState<ShopifyService[]>([])
   const [servicesLoading, setServicesLoading] = useState(true)
   const [servicesError, setServicesError] = useState<string | null>(null)
+
+  // Draft order state
+  const [isGeneratingOrder, setIsGeneratingOrder] = useState(false)
+  const [orderResult, setOrderResult] = useState<OrderResult | null>(null)
+  const [orderError, setOrderError] = useState<string | null>(null)
 
   // Fetch Shopify services on mount
   useEffect(() => {
@@ -115,7 +182,7 @@ export default function Home() {
       const totalItems = data.total_items || 1
 
       if (totalItems > 1) {
-        // Multiple items detected - split into separate entries
+        // Multiple items detected - split into separate entries with auto-selected services
         setUploadedImages((prev) => {
           const imageIndex = prev.findIndex((img) => img.id === imageId)
           if (imageIndex === -1) return prev
@@ -128,7 +195,12 @@ export default function Home() {
             analysis: item,
             isAnalyzing: false,
             analysisError: null,
-            selectedServices: [],
+            // Auto-select AI suggested services
+            selectedServices: findMatchingServices(
+              item.suggested_services,
+              item.category,
+              item.sub_type
+            ),
           }))
 
           // Replace original with split items
@@ -139,11 +211,23 @@ export default function Home() {
           ]
         })
       } else {
-        // Single item - update normally
+        // Single item - update with auto-selected services
+        const analysis = items[0]
+        const autoSelectedServices = findMatchingServices(
+          analysis.suggested_services,
+          analysis.category,
+          analysis.sub_type
+        )
+
         setUploadedImages((prev) =>
           prev.map((img) =>
             img.id === imageId
-              ? { ...img, analysis: items[0], isAnalyzing: false }
+              ? {
+                  ...img,
+                  analysis,
+                  isAnalyzing: false,
+                  selectedServices: autoSelectedServices,
+                }
               : img
           )
         )
@@ -255,6 +339,40 @@ export default function Home() {
     )
   }
 
+  // Find matching Shopify services for AI suggestions (exact match on title)
+  const findMatchingServices = (
+    suggestedNames: string[],
+    category?: string,
+    subType?: string
+  ): SelectedService[] => {
+    const relevantServices = filterServicesForItem(shopifyServices, category, subType)
+
+    // Try exact match first, then fuzzy match
+    return suggestedNames
+      .map(suggestedName => {
+        // Exact match (AI should now use exact names from Shopify)
+        let match = relevantServices.find(s =>
+          s.title.toLowerCase() === suggestedName.toLowerCase()
+        )
+
+        // Fuzzy match as fallback (for training data / older suggestions)
+        if (!match) {
+          match = relevantServices.find(s =>
+            s.title.toLowerCase().includes(suggestedName.toLowerCase()) ||
+            suggestedName.toLowerCase().includes(s.title.toLowerCase())
+          )
+        }
+
+        return match
+      })
+      .filter((s): s is ShopifyService => s !== undefined)
+      .map(service => ({
+        service,
+        quantity: 1,
+        aiSuggested: true,
+      }))
+  }
+
   // Calculate total price across all items
   const calculateTotalPrices = () => {
     // Combine all selected services from all items
@@ -309,6 +427,99 @@ export default function Home() {
   )
 
   const priceCalculation = calculateTotalPrices()
+
+  // Handle draft order creation
+  const handleGenerateOrder = async (customerInfo: CustomerInfo) => {
+    setIsGeneratingOrder(true)
+    setOrderError(null)
+
+    try {
+      // Save training data for each item (to improve AI)
+      for (const image of uploadedImages) {
+        if (image.analysis && image.selectedServices.length > 0) {
+          try {
+            await fetch('/api/training/examples', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                image_url: image.url,
+                ai_category: image.analysis.category,
+                ai_sub_type: image.analysis.sub_type,
+                ai_material: image.analysis.material,
+                ai_condition: image.analysis.condition,
+                ai_suggested_services: image.analysis.suggested_services,
+                correct_services: image.selectedServices.map(s => ({
+                  service_name: s.service.title,
+                  variant_id: s.service.variant_id,
+                  quantity: s.quantity,
+                })),
+                status: 'verified',
+              }),
+            })
+          } catch (error) {
+            console.error('Failed to save training example:', error)
+          }
+        }
+      }
+
+      // Build line items for API
+      const lineItems = priceCalculation.lineItems.map(item => ({
+        variantId: item.variantId,
+        quantity: item.quantity,
+      }))
+
+      // Create draft order
+      const response = await fetch('/api/shopify/draft-orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer: customerInfo,
+          lineItems,
+          note: `Created via ISF Cost Estimator for ${uploadedImages.length} item(s)`,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Failed to create draft order')
+      }
+
+      // Generate customer message
+      const message = generateCustomerMessage({
+        customerName: customerInfo.name,
+        items: priceCalculation.lineItems.map(item => ({
+          name: item.serviceName,
+          quantity: item.quantity,
+          price: item.basePrice,
+        })),
+        totalPrice: priceCalculation.grandTotal,
+        checkoutUrl: data.invoiceUrl,
+        currency: 'AED',
+      })
+
+      // Set success result
+      setOrderResult({
+        draftOrderId: data.draftOrderId,
+        invoiceUrl: data.invoiceUrl,
+        totalPrice: data.totalPrice,
+        customerMessage: message,
+      })
+    } catch (error) {
+      console.error('Order creation error:', error)
+      setOrderError(error instanceof Error ? error.message : 'Failed to create order')
+    } finally {
+      setIsGeneratingOrder(false)
+    }
+  }
+
+  // Reset to start new estimation
+  const handleStartNew = () => {
+    setLocalImages([])
+    setUploadedImages([])
+    setOrderResult(null)
+    setOrderError(null)
+  }
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -447,10 +658,14 @@ export default function Home() {
             {/* Service selectors for each item */}
             {!servicesLoading && !servicesError && (
               <div className="space-y-6">
-                {uploadedImages.map((image, index) => (
+                {uploadedImages.map((image, index) => {
+                  const brand = image.analysis?.brand
+                  const showBrand = brand && brand.toLowerCase() !== 'unknown' && brand.toLowerCase() !== 'unknown brand'
+
+                  return (
                   <div key={image.id} className="border-b border-gray-200 pb-6 last:border-0 last:pb-0">
-                    {/* Item header */}
-                    <div className="flex items-center gap-3 mb-3">
+                    {/* Item header with brand */}
+                    <div className="flex items-center gap-3 mb-4">
                       <img
                         src={image.url}
                         alt={`Item ${index + 1}`}
@@ -458,10 +673,13 @@ export default function Home() {
                       />
                       <div>
                         <h3 className="font-medium text-gray-900">
-                          Item {index + 1}: {image.analysis?.sub_type || image.analysis?.category}
+                          Item {index + 1}: {showBrand ? `${brand} ` : ''}
+                          {formatCategory(image.analysis?.category, image.analysis?.sub_type)}
                         </h3>
                         <p className="text-sm text-gray-500">
-                          {image.analysis?.material?.replace('_', ' ')} - {image.analysis?.condition} condition
+                          {formatMaterial(image.analysis?.material)}
+                          {image.analysis?.color && ` • ${image.analysis.color}`}
+                          {image.analysis?.condition && ` • ${image.analysis.condition} condition`}
                         </p>
                       </div>
                     </div>
@@ -478,30 +696,56 @@ export default function Home() {
                       itemSubType={image.analysis?.sub_type}
                     />
                   </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </section>
         )}
 
-        {/* Step 4: Price Summary */}
+        {/* Step 4: Review & Generate Order */}
         {allAnalyzed && hasAnyServicesSelected && (
           <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <h2 className="text-lg font-medium text-gray-900 mb-4">
               Step 4: Review & Generate Order
             </h2>
 
-            <PriceSummary
-              lineItems={priceCalculation.lineItems}
-              subtotal={priceCalculation.subtotal}
-              modifiersTotal={priceCalculation.modifiersTotal}
-              grandTotal={priceCalculation.grandTotal}
-              currency={priceCalculation.currency}
-              onGenerateOrder={() => {
-                // Placeholder for M5 - Shopify draft order creation
-                alert('Draft order generation coming in the next phase!')
-              }}
-            />
+            {/* Show order success if completed */}
+            {orderResult ? (
+              <OrderSuccess
+                invoiceUrl={orderResult.invoiceUrl}
+                totalPrice={orderResult.totalPrice}
+                customerMessage={orderResult.customerMessage}
+                onStartNew={handleStartNew}
+              />
+            ) : (
+              <>
+                {/* Price summary */}
+                <PriceSummary
+                  lineItems={priceCalculation.lineItems}
+                  subtotal={priceCalculation.subtotal}
+                  modifiersTotal={priceCalculation.modifiersTotal}
+                  grandTotal={priceCalculation.grandTotal}
+                  currency={priceCalculation.currency}
+                />
+
+                {/* Customer form */}
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <h3 className="font-medium text-gray-900 mb-4">Customer Information</h3>
+                  <CustomerForm
+                    onSubmit={handleGenerateOrder}
+                    isLoading={isGeneratingOrder}
+                  />
+                </div>
+
+                {/* Error message */}
+                {orderError && (
+                  <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                    {orderError}
+                  </div>
+                )}
+              </>
+            )}
           </section>
         )}
 

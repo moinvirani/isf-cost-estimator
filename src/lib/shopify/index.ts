@@ -20,3 +20,10 @@ export {
   type ShopifyOrder,
   type ShopifyOrderLineItem,
 } from './orders'
+export {
+  createDraftOrder,
+  type DraftOrderLineItem,
+  type DraftOrderCustomer,
+  type CreateDraftOrderInput,
+  type DraftOrderResult,
+} from './draft-orders'

@@ -5,6 +5,7 @@
  *
  * Receives image URLs and returns AI analysis results.
  * Uses GPT-4 Vision to analyze shoes/bags/leather goods.
+ * Fetches real Shopify services to give AI exact service names.
  * Includes few-shot examples from training data to improve recommendations.
  */
 
@@ -12,6 +13,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import openai from '@/lib/ai/openai'
 import { buildAnalysisMessages } from '@/lib/ai/prompts'
+import { fetchShopifyServices } from '@/lib/shopify/services'
 import type { AIAnalysisResult, AIMultiItemResponse } from '@/types/item'
 
 // Supabase client for fetching training examples
@@ -75,11 +77,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
       )
     }
 
-    // Fetch training examples for few-shot learning
-    const trainingExamples = await fetchTrainingExamples()
+    // Fetch Shopify services and training examples in parallel
+    const [shopifyServices, trainingExamples] = await Promise.all([
+      fetchShopifyServices(),
+      fetchTrainingExamples(),
+    ])
 
-    // Build messages for GPT-4 Vision (with training examples)
-    const messages = buildAnalysisMessages(body.imageUrl, trainingExamples)
+    // Build messages for GPT-4 Vision (with real service names and training examples)
+    const messages = buildAnalysisMessages(body.imageUrl, shopifyServices, trainingExamples)
 
     // Call OpenAI API
     const completion = await openai.chat.completions.create({

@@ -14,7 +14,8 @@ interface SelectedServiceWithQuantity {
 }
 
 interface PriceLineItem {
-  serviceId: string
+  serviceId: string      // Product ID (for reference)
+  variantId: string      // Variant ID (for Shopify cart/orders)
   serviceName: string
   quantity: number
   basePrice: number
@@ -167,6 +168,7 @@ export function calculatePrices(
 
     return {
       serviceId: service.id,
+      variantId: service.variant_id,
       serviceName: service.title,
       quantity,
       basePrice,
