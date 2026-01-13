@@ -51,18 +51,26 @@ export interface DetectedIssue {
   description: string   // Human-readable description
 }
 
-/** Full AI analysis result stored in ai_analysis column */
+/** Full AI analysis result for a single item */
 export interface AIAnalysisResult {
+  item_number?: number          // Position in multi-item image (1, 2, 3...)
+  position?: string             // Location in image (top, middle, bottom, etc.)
   category: ItemCategory
   sub_type: string
   material: MaterialType
   color: string
-  brand?: string
+  brand?: string | null
   condition: ConditionRating
   issues: DetectedIssue[]
   suggested_services: string[]  // Service names suggested by AI
   confidence: number            // 0.0 to 1.0
   notes?: string                // Any additional AI observations
+}
+
+/** Multi-item AI analysis response (new format) */
+export interface AIMultiItemResponse {
+  items: AIAnalysisResult[]
+  total_items: number
 }
 
 // ============================================

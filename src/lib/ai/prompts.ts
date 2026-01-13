@@ -11,11 +11,14 @@
  */
 export const ANALYSIS_SYSTEM_PROMPT = `You are an expert leather goods assessor working for Italian Shoe Factory (ISF), a premium shoe and leather repair service in Dubai. Your job is to analyze photos of shoes, bags, and leather goods to identify:
 
-1. What type of item it is
-2. The material it's made of
-3. The current condition
-4. Any issues or damage that need repair
-5. What services might be needed
+1. How many distinct items are in the image (count pairs of shoes as ONE item each)
+2. What type each item is
+3. The material each is made of
+4. The current condition of each
+5. Any issues or damage that need repair
+6. What services might be needed for each
+
+IMPORTANT: A single image may contain MULTIPLE items (e.g., 4 pairs of shoes laid out together). You must identify and analyze EACH item separately.
 
 You must respond ONLY with valid JSON matching the exact structure specified. Do not include any text before or after the JSON.`
 
@@ -23,26 +26,35 @@ You must respond ONLY with valid JSON matching the exact structure specified. Do
  * User prompt template for analyzing a single image.
  * This gets sent along with the image.
  */
-export const ANALYSIS_USER_PROMPT = `Analyze this image and provide a detailed assessment. Respond with ONLY valid JSON in this exact structure:
+export const ANALYSIS_USER_PROMPT = `Analyze this image and provide a detailed assessment of ALL items visible. If multiple items (pairs of shoes, bags, etc.) are in the image, analyze EACH ONE separately.
+
+Respond with ONLY valid JSON in this exact structure - ALWAYS return an array, even for single items:
 
 {
-  "category": "shoes" | "bags" | "other_leather",
-  "sub_type": "<specific type - for shoes: 'mens', 'womens', 'kids', 'unisex'; for bags: 'handbag', 'clutch', 'backpack', 'wallet', 'briefcase', 'tote'; for other: 'belt', 'jacket', 'watch_strap', 'other'>",
-  "material": "smooth_leather" | "suede" | "nubuck" | "patent" | "exotic" | "fabric" | "synthetic" | "mixed",
-  "color": "<primary color>",
-  "brand": "<brand name if visible, or null if not identifiable>",
-  "condition": "excellent" | "good" | "fair" | "poor",
-  "issues": [
+  "items": [
     {
-      "type": "<issue type: scuff, stain, scratch, tear, heel_damage, sole_wear, color_fade, water_damage, mold, broken_hardware, etc.>",
-      "severity": "minor" | "moderate" | "severe",
-      "location": "<location: toe_box, heel, sole, upper, strap, handle, zipper, buckle, lining, etc.>",
-      "description": "<brief description>"
+      "item_number": 1,
+      "position": "<where in image: top, middle, bottom, left, right, center>",
+      "category": "shoes" | "bags" | "other_leather",
+      "sub_type": "<specific type - for shoes: 'mens', 'womens', 'kids', 'unisex', 'sneakers'; for bags: 'handbag', 'clutch', 'backpack', 'wallet', 'briefcase', 'tote'; for other: 'belt', 'jacket', 'watch_strap', 'other'>",
+      "material": "smooth_leather" | "suede" | "nubuck" | "patent" | "exotic" | "fabric" | "synthetic" | "mixed",
+      "color": "<primary color>",
+      "brand": "<brand name if visible, or null if not identifiable>",
+      "condition": "excellent" | "good" | "fair" | "poor",
+      "issues": [
+        {
+          "type": "<issue type: scuff, stain, scratch, tear, heel_damage, sole_wear, color_fade, water_damage, mold, broken_hardware, etc.>",
+          "severity": "minor" | "moderate" | "severe",
+          "location": "<location: toe_box, heel, sole, upper, strap, handle, zipper, buckle, lining, etc.>",
+          "description": "<brief description>"
+        }
+      ],
+      "suggested_services": ["<service names that would address the issues>"],
+      "confidence": <0.0 to 1.0 - how confident you are in this analysis>,
+      "notes": "<any additional observations about this specific item>"
     }
   ],
-  "suggested_services": ["<service names that would address the issues>"],
-  "confidence": <0.0 to 1.0 - how confident you are in this analysis>,
-  "notes": "<any additional observations about the item>"
+  "total_items": <number of items detected>
 }
 
 ISF Services (use EXACT names from this list):

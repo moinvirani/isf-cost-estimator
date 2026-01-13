@@ -126,6 +126,64 @@ export interface SaveTrainingExampleRequest {
 }
 
 // ============================================
+// Image Grouping Types
+// ============================================
+
+// Image within a group (same as ZokoImage but with optional group context)
+export interface GroupedImage {
+  url: string
+  messageId: string
+  timestamp: string
+  caption?: string
+}
+
+// AI identification result for an item
+export interface ItemIdentification {
+  brand?: string          // e.g., "Hermes", "Chanel", "Louis Vuitton"
+  model?: string          // e.g., "Birkin 30", "Classic Flap Medium"
+  category?: string       // e.g., "handbag", "shoes", "wallet"
+}
+
+// Service selected for a specific item group
+export interface SelectedServiceForGroup {
+  serviceId: string
+  serviceName: string
+  quantity: number
+  unitPrice: number
+}
+
+// A group of images representing a single item (different angles)
+export interface ItemGroup {
+  groupId: string
+  images: GroupedImage[]
+  itemDescription: string    // AI-generated description
+  identification?: ItemIdentification
+  // Analysis result (from analyze button)
+  analysis?: {
+    category?: string
+    material?: string
+    condition?: string
+    issues?: DetectedIssue[]
+  }
+  // Services selected for this specific item
+  selectedServices: SelectedServiceForGroup[]
+}
+
+// Response from group-images API
+export interface GroupImagesResponse {
+  success: boolean
+  groups?: Array<{
+    groupId: string
+    images: GroupedImage[]
+    itemDescription: string
+    brand?: string
+    model?: string
+    category?: string
+  }>
+  error?: string
+}
+
+// ============================================
 // Helper Types
 // ============================================
 

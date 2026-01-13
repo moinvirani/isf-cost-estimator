@@ -44,6 +44,10 @@ export interface ShopifyOrder {
 
 interface OrdersQueryResponse {
   orders: {
+    pageInfo?: {
+      hasNextPage: boolean
+      endCursor: string | null
+    }
     edges: Array<{
       node: ShopifyOrder
     }>
@@ -215,11 +219,15 @@ export function extractServicesFromOrder(order: ShopifyOrder): Array<{
 }
 
 /**
- * GraphQL query to fetch recent orders
+ * GraphQL query to fetch recent orders with pagination
  */
 const RECENT_ORDERS_QUERY = `
-  query RecentOrders($query: String!, $first: Int!) {
-    orders(first: $first, query: $query, sortKey: CREATED_AT, reverse: true) {
+  query RecentOrders($query: String!, $first: Int!, $after: String) {
+    orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT, reverse: true) {
+      pageInfo {
+        hasNextPage
+        endCursor
+      }
       edges {
         node {
           id
@@ -259,6 +267,7 @@ const RECENT_ORDERS_QUERY = `
 
 /**
  * Fetch recent orders from Shopify
+ * Paginates through results (Shopify max is 250 per request)
  *
  * @param options.daysBack - How many days back to look (default: 90)
  * @param options.limit - Max orders to return (default: 100)
@@ -273,6 +282,9 @@ export async function getRecentOrders(
 ): Promise<ShopifyOrder[]> {
   const { daysBack = 90, limit = 100, tag } = options
 
+  // Shopify API max is 250 per request
+  const PAGE_SIZE = Math.min(limit, 250)
+
   // Calculate date range
   const startDate = new Date()
   startDate.setDate(startDate.getDate() - daysBack)
@@ -285,19 +297,44 @@ export async function getRecentOrders(
     query += ` tag:${tag}`
   }
 
-  console.log('[Orders] Fetching recent orders with query:', query)
+  console.log('[Orders] Fetching recent orders with query:', query, 'limit:', limit)
 
   try {
-    const data = await shopifyAdminFetch<OrdersQueryResponse>(
-      RECENT_ORDERS_QUERY,
-      { query, first: limit }
-    )
+    const allOrders: ShopifyOrder[] = []
+    let cursor: string | null = null
+    let hasNextPage = true
+    let pageCount = 0
 
-    const orders = data.orders.edges.map((edge) => edge.node)
-    console.log('[Orders] Found', orders.length, 'orders in last', daysBack, 'days')
+    // Paginate through results
+    while (hasNextPage && allOrders.length < limit) {
+      pageCount++
+      const remainingNeeded = limit - allOrders.length
+      const fetchCount = Math.min(PAGE_SIZE, remainingNeeded)
+
+      console.log(`[Orders] Fetching page ${pageCount}, requesting ${fetchCount} orders...`)
+
+      const response: OrdersQueryResponse = await shopifyAdminFetch<OrdersQueryResponse>(
+        RECENT_ORDERS_QUERY,
+        { query, first: fetchCount, after: cursor }
+      )
+
+      const orders = response.orders.edges.map((edge) => edge.node)
+      allOrders.push(...orders)
+
+      // Update pagination state
+      hasNextPage = response.orders.pageInfo?.hasNextPage ?? false
+      cursor = response.orders.pageInfo?.endCursor ?? null
+
+      console.log(`[Orders] Page ${pageCount}: got ${orders.length} orders, total: ${allOrders.length}`)
+
+      // Safety: stop if no more results
+      if (orders.length === 0) break
+    }
+
+    console.log('[Orders] Found', allOrders.length, 'orders in last', daysBack, 'days')
 
     // Filter to only orders with customer phone (needed for Zoko matching)
-    const ordersWithPhone = orders.filter(o => o.customer?.phone)
+    const ordersWithPhone = allOrders.filter(o => o.customer?.phone)
     console.log('[Orders]', ordersWithPhone.length, 'orders have customer phone')
 
     return ordersWithPhone

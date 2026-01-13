@@ -190,30 +190,27 @@ export async function GET(
 
     // Step 2: Fetch recent Shopify orders
     console.log('[Matched] Fetching recent Shopify orders...')
-    const orders = await getRecentOrders({ daysBack, limit: 200 })
+    const orders = await getRecentOrders({ daysBack, limit: 500 })
     console.log('[Matched] Found', orders.length, 'orders with customer phone')
 
-    // Step 3: Match orders to Zoko customers
+    // Step 3: Match orders to Zoko customers (parallel processing for speed)
     const matchedConversations: MatchedConversation[] = []
+    const BATCH_SIZE = 10 // Process 10 orders in parallel
 
-    for (const order of orders) {
-      if (matchedConversations.length >= limit) break
-
+    // Helper function to process a single order
+    async function processOrder(order: ShopifyOrder): Promise<MatchedConversation | null> {
       const customerPhone = order.customer?.phone
       const customerFirstName = order.customer?.firstName
       const customerLastName = order.customer?.lastName
 
-      if (!customerPhone) continue
+      if (!customerPhone) return null
 
       try {
         // Find Zoko customer by phone
         const zokoCustomer = await getCustomerByPhone(customerPhone)
+        if (!zokoCustomer) return null
 
-        if (!zokoCustomer) {
-          continue
-        }
-
-        // Calculate match confidence (phone + name)
+        // Calculate match confidence
         const { phoneMatch, nameScore, confidence } = calculateMatchConfidence(
           zokoCustomer.channelId,
           zokoCustomer.name,
@@ -222,31 +219,29 @@ export async function GET(
           customerLastName
         )
 
-        // Phone match is the primary identifier - accept if phone matches
-        // Name score is informational only (names often differ between systems)
         if (!phoneMatch) {
           console.log(`[Matched] Skipping ${order.name}: phone doesn't match`)
-          continue
+          return null
         }
 
         // Get Zoko messages and find images before order
         const messages = await getCustomerMessages(zokoCustomer.id)
-
-        if (!Array.isArray(messages)) continue
+        if (!Array.isArray(messages)) return null
 
         const images = findImagesBeforeOrder(messages, order.createdAt, 7)
-
-        // Skip if no images found before order
         if (images.length === 0) {
           console.log(`[Matched] Skipping ${order.name}: no images found before order date`)
-          continue
+          return null
         }
 
         // Get context messages around first image
         const contextMessages = getContextMessages(messages, images[0].timestamp)
 
-        // Build matched conversation
-        matchedConversations.push({
+        console.log(
+          `[Matched] ✓ ${order.name} -> ${zokoCustomer.name} (${confidence}, ${nameScore}% name match, ${images.length} images)`
+        )
+
+        return {
           order: {
             id: order.id,
             name: order.name,
@@ -260,21 +255,36 @@ export async function GET(
             name: zokoCustomer.name,
             phone: zokoCustomer.channelId,
           },
-          // Phone match is verified, so confidence is at least 'low' (never 'none')
           matchConfidence: confidence === 'none' ? 'low' : confidence,
           nameScore,
           images,
           contextMessages,
-        })
-
-        console.log(
-          `[Matched] ✓ ${order.name} -> ${zokoCustomer.name} (${confidence}, ${nameScore}% name match, ${images.length} images)`
-        )
+        }
       } catch (orderError) {
-        // Log error but continue processing other orders
         console.error(`[Matched] Error processing ${order.name}:`, orderError instanceof Error ? orderError.message : orderError)
-        continue
+        return null
       }
+    }
+
+    // Process orders in parallel batches
+    for (let i = 0; i < orders.length; i += BATCH_SIZE) {
+      // Stop if we have enough matches
+      if (matchedConversations.length >= limit) break
+
+      const batch = orders.slice(i, i + BATCH_SIZE)
+      console.log(`[Matched] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(orders.length / BATCH_SIZE)} (${batch.length} orders)`)
+
+      // Process batch in parallel
+      const batchResults = await Promise.allSettled(batch.map(processOrder))
+
+      // Collect successful matches
+      for (const result of batchResults) {
+        if (result.status === 'fulfilled' && result.value) {
+          matchedConversations.push(result.value)
+        }
+      }
+
+      console.log(`[Matched] Found ${matchedConversations.length} matches so far`)
     }
 
     console.log(

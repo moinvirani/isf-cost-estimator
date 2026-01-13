@@ -20,8 +20,9 @@ import type { ShopifyService } from '@/types/service'
 // Type for our uploaded images (before Supabase upload)
 interface LocalImage {
   id: string
-  file: File
+  file?: File           // Optional - may be URL-based
   previewUrl: string
+  sourceUrl?: string    // Original URL if loaded from URL
 }
 
 // Selected service with quantity
@@ -85,7 +86,7 @@ export default function Home() {
     setUploadError(null)
   }
 
-  // Analyze a single image
+  // Analyze a single image (may detect multiple items)
   const analyzeImage = async (imageId: string, imageUrl: string) => {
     // Set analyzing state for this image
     setUploadedImages((prev) =>
@@ -109,14 +110,44 @@ export default function Home() {
         throw new Error(data.error || 'Analysis failed')
       }
 
-      // Update with analysis results
-      setUploadedImages((prev) =>
-        prev.map((img) =>
-          img.id === imageId
-            ? { ...img, analysis: data.analysis, isAnalyzing: false }
-            : img
+      // Check if multiple items were detected
+      const items: AIAnalysisResult[] = data.items || [data.analysis]
+      const totalItems = data.total_items || 1
+
+      if (totalItems > 1) {
+        // Multiple items detected - split into separate entries
+        setUploadedImages((prev) => {
+          const imageIndex = prev.findIndex((img) => img.id === imageId)
+          if (imageIndex === -1) return prev
+
+          const originalImage = prev[imageIndex]
+          const newImages: UploadedImage[] = items.map((item, idx) => ({
+            id: `${imageId}-item-${idx + 1}`,
+            url: originalImage.url,
+            path: originalImage.path,
+            analysis: item,
+            isAnalyzing: false,
+            analysisError: null,
+            selectedServices: [],
+          }))
+
+          // Replace original with split items
+          return [
+            ...prev.slice(0, imageIndex),
+            ...newImages,
+            ...prev.slice(imageIndex + 1),
+          ]
+        })
+      } else {
+        // Single item - update normally
+        setUploadedImages((prev) =>
+          prev.map((img) =>
+            img.id === imageId
+              ? { ...img, analysis: items[0], isAnalyzing: false }
+              : img
+          )
         )
-      )
+      }
     } catch (error) {
       console.error('Analysis error:', error)
       setUploadedImages((prev) =>
@@ -142,20 +173,42 @@ export default function Home() {
     setUploadError(null)
 
     try {
-      // Upload all images to Supabase Storage
-      const files = localImages.map((img) => img.file)
-      const results = await uploadImages(files)
+      // Separate file-based and URL-based images
+      const fileImages = localImages.filter(img => img.file)
+      const urlImages = localImages.filter(img => img.sourceUrl && !img.file)
 
-      // Map results to our format with initial analysis state
-      const uploaded: UploadedImage[] = results.map((result, index) => ({
-        id: localImages[index].id,
-        url: result.url,
-        path: result.path,
-        analysis: null,
-        isAnalyzing: false,
-        analysisError: null,
-        selectedServices: [],
-      }))
+      const uploaded: UploadedImage[] = []
+
+      // Upload file-based images to Supabase Storage
+      if (fileImages.length > 0) {
+        const files = fileImages.map(img => img.file!)
+        const results = await uploadImages(files)
+
+        for (let i = 0; i < results.length; i++) {
+          uploaded.push({
+            id: fileImages[i].id,
+            url: results[i].url,
+            path: results[i].path,
+            analysis: null,
+            isAnalyzing: false,
+            analysisError: null,
+            selectedServices: [],
+          })
+        }
+      }
+
+      // Add URL-based images directly (no upload needed)
+      for (const img of urlImages) {
+        uploaded.push({
+          id: img.id,
+          url: img.sourceUrl!,
+          path: `url:${img.sourceUrl}`,
+          analysis: null,
+          isAnalyzing: false,
+          analysisError: null,
+          selectedServices: [],
+        })
+      }
 
       setUploadedImages(uploaded)
 

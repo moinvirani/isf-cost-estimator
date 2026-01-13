@@ -12,7 +12,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import openai from '@/lib/ai/openai'
 import { buildAnalysisMessages } from '@/lib/ai/prompts'
-import type { AIAnalysisResult } from '@/types/item'
+import type { AIAnalysisResult, AIMultiItemResponse } from '@/types/item'
 
 // Supabase client for fetching training examples
 const supabase = createClient(
@@ -25,10 +25,12 @@ interface AnalyzeRequest {
   imageUrl: string
 }
 
-// Response type
+// Response type - now returns array of items (supports multi-item images)
 interface AnalyzeResponse {
   success: boolean
-  analysis?: AIAnalysisResult
+  items?: AIAnalysisResult[]      // Array of analyzed items
+  total_items?: number            // Total items found in image
+  analysis?: AIAnalysisResult     // DEPRECATED: kept for backward compatibility (first item)
   error?: string
 }
 
@@ -98,7 +100,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
     }
 
     // Parse the JSON response
-    let analysis: AIAnalysisResult
+    let parsedResponse: AIMultiItemResponse | AIAnalysisResult
 
     try {
       // Clean the response (remove markdown code blocks if present)
@@ -113,7 +115,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
       }
       cleanContent = cleanContent.trim()
 
-      analysis = JSON.parse(cleanContent)
+      parsedResponse = JSON.parse(cleanContent)
     } catch (parseError) {
       console.error('Failed to parse AI response:', content)
       return NextResponse.json(
@@ -122,10 +124,26 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
       )
     }
 
-    // Return the analysis
+    // Handle both new multi-item format and legacy single-item format
+    let items: AIAnalysisResult[]
+    let totalItems: number
+
+    if ('items' in parsedResponse && Array.isArray(parsedResponse.items)) {
+      // New multi-item format
+      items = parsedResponse.items
+      totalItems = parsedResponse.total_items || items.length
+    } else {
+      // Legacy single-item format - wrap in array
+      items = [parsedResponse as AIAnalysisResult]
+      totalItems = 1
+    }
+
+    // Return the analysis with both new and legacy formats
     return NextResponse.json({
       success: true,
-      analysis,
+      items,
+      total_items: totalItems,
+      analysis: items[0], // Backward compatibility - first item
     })
   } catch (error) {
     console.error('Analysis error:', error)
