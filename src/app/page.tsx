@@ -12,6 +12,7 @@
  */
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { ImageUpload, ServiceSelector, PriceSummary, CustomerForm, OrderSuccess } from '@/components/estimation'
 import type { CustomerInfo } from '@/components/estimation'
 import { AnnotatedImageViewer } from '@/components/ui/annotated-image-viewer'
@@ -480,6 +481,48 @@ export default function Home() {
         currency: 'AED',
       })
 
+      // Save estimation to Supabase for history
+      try {
+        await fetch('/api/estimations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer: customerInfo,
+            items: items.map(item => ({
+              imageUrl: item.images[0]?.url,
+              imagePath: item.images[0]?.path,
+              category: item.analysis?.category,
+              subType: item.analysis?.sub_type,
+              material: item.analysis?.material,
+              color: item.analysis?.color,
+              brand: item.analysis?.brand,
+              condition: item.analysis?.condition,
+              aiAnalysis: item.analysis,
+              aiConfidence: item.analysis?.confidence,
+              services: item.selectedServices.map(s => ({
+                shopifyVariantId: s.service.variant_id,
+                serviceName: s.service.title,
+                quantity: s.quantity,
+                basePrice: s.service.price,
+                finalPrice: s.service.price * s.quantity,
+                aiSuggested: s.aiSuggested,
+              })),
+              subtotal: item.selectedServices.reduce(
+                (sum, s) => sum + s.service.price * s.quantity,
+                0
+              ),
+            })),
+            grandTotal: priceCalculation.grandTotal,
+            draftOrderId: data.draftOrderId,
+            draftOrderUrl: data.invoiceUrl,
+            customerMessage: message,
+          }),
+        })
+      } catch (saveError) {
+        console.error('Failed to save estimation to history:', saveError)
+        // Don't fail the order creation if history save fails
+      }
+
       setOrderResult({
         draftOrderId: data.draftOrderId,
         invoiceUrl: data.invoiceUrl,
@@ -509,12 +552,22 @@ export default function Home() {
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-3xl mx-auto px-4 py-4">
-          <h1 className="text-xl font-semibold text-gray-900">
-            ISF Cost Estimator
-          </h1>
-          <p className="text-sm text-gray-500">
-            Upload photos to get service recommendations
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-semibold text-gray-900">
+                ISF Cost Estimator
+              </h1>
+              <p className="text-sm text-gray-500">
+                Upload photos to get service recommendations
+              </p>
+            </div>
+            <Link
+              href="/estimations"
+              className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              History
+            </Link>
+          </div>
         </div>
       </header>
 
