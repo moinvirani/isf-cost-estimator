@@ -723,14 +723,13 @@ export default function Home() {
               Step 3: Select Services for Item {currentItemIndex + 1}
             </h2>
 
-            {/* Annotated image viewer */}
+            {/* Image viewer */}
             <div className="mb-4">
               <AnnotatedImageViewer
                 images={currentItem.images.map(img => ({ id: img.id, url: img.url }))}
-                issues={currentItem.analysis.issues || []}
               />
               <p className="text-xs text-gray-500 mt-2 text-center">
-                Tap an image to view full-screen with issue annotations
+                Tap an image to view full-screen with zoom
               </p>
             </div>
 

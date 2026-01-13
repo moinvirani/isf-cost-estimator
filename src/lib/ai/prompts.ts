@@ -77,66 +77,13 @@ Respond with ONLY valid JSON in this exact structure:
       "type": "<issue type: scuff, stain, scratch, tear, heel_damage, sole_wear, color_fade, water_damage, mold, broken_hardware, etc.>",
       "severity": "minor" | "moderate" | "severe",
       "location": "<location on item: toe_box, heel, sole, upper, strap, handle, zipper, buckle, lining, etc.>",
-      "description": "<brief description>",
-      "bbox": {
-        "x": <left edge as fraction 0-1>,
-        "y": <top edge as fraction 0-1>,
-        "width": <width as fraction 0-1>,
-        "height": <height as fraction 0-1>,
-        "imageIndex": <which image shows this issue best (0-indexed)>
-      }
+      "description": "<brief description>"
     }
   ],
   "suggested_services": ["<EXACT service name from the list below>"],
   "confidence": <0.0 to 1.0 - how confident you are in this analysis>,
   "notes": "<any additional observations>"
 }
-
-BOUNDING BOX INSTRUCTIONS - USE GRID POSITION:
-Think of the image as a 3x3 grid. Identify which cell contains the issue:
-
-  TOP-LEFT    |  TOP-CENTER   |  TOP-RIGHT
-  (0.17, 0.17)| (0.5, 0.17)   | (0.83, 0.17)
-  ------------+--------------+-------------
-  MID-LEFT    |    CENTER     |  MID-RIGHT
-  (0.17, 0.5) |  (0.5, 0.5)   | (0.83, 0.5)
-  ------------+--------------+-------------
-  BOT-LEFT    |  BOT-CENTER   |  BOT-RIGHT
-  (0.17, 0.83)| (0.5, 0.83)   | (0.83, 0.83)
-
-For bbox coordinates:
-1. Find which grid cell the issue is in
-2. Use the center coordinates from the table above as x and y
-3. Use width=0.3 and height=0.3 (covers the grid cell)
-4. imageIndex = which image shows this issue (0-indexed)
-
-EXAMPLE - Scuff on toe box (usually center of shoe photo):
-{
-  "bbox": {
-    "x": 0.5,       // CENTER column
-    "y": 0.5,       // MIDDLE row
-    "width": 0.3,
-    "height": 0.3,
-    "imageIndex": 0
-  }
-}
-
-EXAMPLE - Heel damage (usually bottom of shoe photo):
-{
-  "bbox": {
-    "x": 0.5,       // CENTER column
-    "y": 0.83,      // BOTTOM row
-    "width": 0.3,
-    "height": 0.3,
-    "imageIndex": 0
-  }
-}
-
-IMPORTANT: Focus on WHERE ON THE ITEM the issue is, not where the item is in the frame. Most shoe photos have the shoe centered, so:
-- Toe area → use CENTER or slightly above center (y=0.4-0.5)
-- Heel area → use lower portion (y=0.6-0.8)
-- Sole → use bottom (y=0.8-0.9)
-- Upper/top → use upper portion (y=0.2-0.4)
 
 AVAILABLE SERVICES - Use EXACT names from this list for suggested_services:
 ${serviceList}
