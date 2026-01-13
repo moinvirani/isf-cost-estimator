@@ -104,7 +104,7 @@ export default function TrainingPage() {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [stats, setStats] = useState<{ ordersFound: number; matchesFound: number; indexSize: number } | null>(null)
+  const [stats, setStats] = useState<{ ordersFound: number; matchesFound: number; indexSize: number; alreadyTrained?: number } | null>(null)
 
   // Shopify services (full list for manual selection)
   const [services, setServices] = useState<ShopifyService[]>([])
@@ -135,6 +135,10 @@ export default function TrainingPage() {
   // Gallery: track which image is selected (for multi-image items)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
+  // Track unmatched order items (custom products not in catalog)
+  const [unmatchedItems, setUnmatchedItems] = useState<Array<{title: string, price: string}>>([])
+
+
   const currentConversation = conversations[currentIndex]
   const currentImages = currentConversation?.images || []
   const currentImage = currentImages[selectedImageIndex] || currentImages[0]
@@ -146,13 +150,13 @@ export default function TrainingPage() {
     fetchSavedCount()
   }, [])
 
-  // Auto-apply order services when conversation changes
+  // Auto-apply order services when conversation changes OR services load
   useEffect(() => {
-    if (currentConversation) {
+    if (currentConversation && services.length > 0) {
       applyOrderServices()
       setSelectedImageIndex(0)
     }
-  }, [currentIndex, currentConversation])
+  }, [currentIndex, currentConversation, services])
 
   const fetchSavedCount = async () => {
     try {
@@ -185,11 +189,33 @@ export default function TrainingPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/training/matched-conversations?daysBack=90&limit=50')
+      // First, get list of already-trained message IDs
+      const trainedRes = await fetch('/api/training/examples?limit=1000')
+      const trainedData = await trainedRes.json()
+      const trainedMessageIds = new Set<string>(
+        (trainedData.examples || [])
+          .map((ex: TrainingExample) => ex.zoko_message_id)
+          .filter(Boolean)
+      )
+
+      // Fetch matched conversations
+      const res = await fetch('/api/training/matched-conversations?daysBack=90&limit=100')
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
-      setConversations(data.conversations || [])
-      setStats(data.stats || null)
+
+      // Filter out conversations where we've already trained on any of the images
+      const untrained = (data.conversations || []).filter((conv: MatchedConversation) => {
+        // Check if ANY image in this conversation has been trained
+        const hasTrainedImage = conv.images.some(img => trainedMessageIds.has(img.messageId))
+        return !hasTrainedImage
+      })
+
+      setConversations(untrained)
+      setStats({
+        ...data.stats,
+        matchesFound: untrained.length,
+        alreadyTrained: (data.conversations?.length || 0) - untrained.length,
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load matched conversations')
     } finally {
@@ -220,19 +246,65 @@ export default function TrainingPage() {
     if (!currentConversation || services.length === 0) return
 
     const newSelected: SelectedService[] = []
+    const unmatched: Array<{title: string, price: string}> = []
+
     for (const lineItem of currentConversation.order.services) {
-      // Find matching service in our services list (match by title)
-      const matchedService = services.find(
-        s => s.title.toLowerCase() === lineItem.title.toLowerCase()
-      )
+      const orderTitle = lineItem.title.toLowerCase().trim()
+      const orderPrice = parseFloat(lineItem.price)
+
+      // Extract category prefix (before pipe) AND service name (after pipe)
+      const orderParts = orderTitle.split('|')
+      const categoryPrefix = orderParts.length > 1 ? orderParts[0].trim() : '' // "men's", "women's", "bags"
+      const serviceName = orderParts.pop()?.trim() || orderTitle // "heel top-lift replacement"
+
+      // Find matching service by category + title + price
+      let matchedService = services.find(s => {
+        const serviceTitle = s.title.toLowerCase().trim()
+        const servicePrice = typeof s.price === 'string' ? parseFloat(s.price) : s.price
+
+        // Title must match (partial or full)
+        const titleMatches =
+          serviceTitle === orderTitle ||
+          serviceTitle === serviceName ||
+          orderTitle.includes(serviceTitle) ||
+          serviceTitle.includes(serviceName)
+
+        // Price must match exactly (this ensures we get the right variant)
+        const priceMatches = Math.abs(servicePrice - orderPrice) < 0.01
+
+        // Category prefix must match (e.g., "women's" must be in "women's | heel top-lift - rubber")
+        // This prevents Men's variant matching when Women's is specified
+        const categoryMatches = !categoryPrefix ||
+          serviceTitle.includes(categoryPrefix) ||
+          serviceTitle.startsWith(categoryPrefix.replace("'s", ""))
+
+        return titleMatches && priceMatches && categoryMatches
+      })
+
+      // Fallback: if no exact match, try without category (but still require price)
+      if (!matchedService) {
+        matchedService = services.find(s => {
+          const serviceTitle = s.title.toLowerCase().trim()
+          const servicePrice = typeof s.price === 'string' ? parseFloat(s.price) : s.price
+          const titleMatches = serviceTitle.includes(serviceName) || serviceName.includes(serviceTitle)
+          const priceMatches = Math.abs(servicePrice - orderPrice) < 0.01
+          return titleMatches && priceMatches
+        })
+      }
+
       if (matchedService) {
         newSelected.push({
           service: matchedService,
           quantity: lineItem.quantity,
         })
+      } else {
+        // Track unmatched items (custom products not in catalog)
+        unmatched.push({ title: lineItem.title, price: lineItem.price })
       }
     }
+
     setSelectedServices(newSelected)
+    setUnmatchedItems(unmatched)
   }
 
   const toggleService = (service: ShopifyService) => {
@@ -286,6 +358,7 @@ export default function TrainingPage() {
 
       setSavedCount(prev => prev + 1)
       setSelectedServices([])
+      setUnmatchedItems([])
       setSelectedImageIndex(0)
       setCurrentIndex(prev => prev + 1)
 
@@ -306,6 +379,7 @@ export default function TrainingPage() {
 
   const skipConversation = () => {
     setSelectedServices([])
+    setUnmatchedItems([])
     setSelectedImageIndex(0)
     setCurrentIndex(prev => prev + 1)
   }
@@ -371,7 +445,7 @@ export default function TrainingPage() {
               </p>
               {stats && (
                 <p className="text-xs text-gray-400">
-                  {stats.matchesFound} matches from {stats.ordersFound} orders
+                  {stats.matchesFound} new{stats.alreadyTrained ? ` (${stats.alreadyTrained} already trained)` : ''} from {stats.ordersFound} orders
                 </p>
               )}
             </div>
@@ -523,21 +597,41 @@ export default function TrainingPage() {
                 <div className="bg-green-50 border border-green-200 rounded-lg p-3">
                   <div className="flex items-center justify-between mb-2">
                     <span className="font-medium text-green-800">{currentConversation.order.name}</span>
-                    <span className="text-sm text-green-700">
-                      {currentConversation.order.totalPrice} {currentConversation.order.currency}
+                    <span className="text-sm font-semibold text-green-700">
+                      Total: {currentConversation.order.totalPrice} {currentConversation.order.currency}
                     </span>
                   </div>
-                  <p className="text-xs text-green-600 mb-2">
+                  <p className="text-xs text-green-600 mb-3">
                     Ordered: {new Date(currentConversation.order.createdAt).toLocaleDateString()}
                   </p>
-                  <div className="text-sm text-green-700">
-                    {currentConversation.order.services.map((svc, i) => (
-                      <span key={i}>
-                        {svc.quantity > 1 ? `${svc.quantity}x ` : ''}{svc.title}
-                        {i < currentConversation.order.services.length - 1 ? ', ' : ''}
-                      </span>
-                    ))}
+                  {/* Order line items with prices */}
+                  <div className="space-y-1.5">
+                    {currentConversation.order.services.map((svc, i) => {
+                      // Check if this item was matched or not
+                      const isUnmatched = unmatchedItems.some(u => u.title === svc.title)
+                      return (
+                        <div key={i} className={`flex items-center justify-between text-sm ${isUnmatched ? 'text-orange-700' : ''}`}>
+                          <span className={isUnmatched ? 'text-orange-800' : 'text-green-800'}>
+                            {svc.quantity > 1 && <span className={isUnmatched ? 'text-orange-600' : 'text-green-600'}>{svc.quantity}x </span>}
+                            {svc.title}
+                            {isUnmatched && <span className="ml-1 text-xs">(not in catalog)</span>}
+                          </span>
+                          <span className={`font-medium ${isUnmatched ? 'text-orange-700' : 'text-green-700'}`}>
+                            {parseFloat(svc.price) > 0 ? `${svc.price} AED` : 'Free'}
+                          </span>
+                        </div>
+                      )
+                    })}
                   </div>
+
+                  {/* Warning for unmatched items */}
+                  {unmatchedItems.length > 0 && (
+                    <div className="mt-3 pt-2 border-t border-orange-200">
+                      <p className="text-xs text-orange-600">
+                        {unmatchedItems.length} item(s) not found in catalog - please select manually from the list
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 

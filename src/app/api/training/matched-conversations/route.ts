@@ -260,7 +260,8 @@ export async function GET(
             name: zokoCustomer.name,
             phone: zokoCustomer.channelId,
           },
-          matchConfidence: confidence,
+          // Phone match is verified, so confidence is at least 'low' (never 'none')
+          matchConfidence: confidence === 'none' ? 'low' : confidence,
           nameScore,
           images,
           contextMessages,
