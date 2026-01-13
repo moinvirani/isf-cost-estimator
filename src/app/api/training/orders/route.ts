@@ -54,7 +54,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<OrdersResp
     }
 
     // Fetch orders from Shopify
-    const shopifyOrders = await getOrdersByPhone(phone, limit)
+    const shopifyOrders = await getOrdersByPhone(phone, { limit })
 
     // Transform to training format
     const orders: OrderForTraining[] = shopifyOrders.map((order) => ({

@@ -205,70 +205,75 @@ export async function GET(
 
       if (!customerPhone) continue
 
-      // Find Zoko customer by phone
-      const zokoCustomer = await getCustomerByPhone(customerPhone)
+      try {
+        // Find Zoko customer by phone
+        const zokoCustomer = await getCustomerByPhone(customerPhone)
 
-      if (!zokoCustomer) {
-        continue
-      }
+        if (!zokoCustomer) {
+          continue
+        }
 
-      // Calculate match confidence (phone + name)
-      const { phoneMatch, nameScore, confidence } = calculateMatchConfidence(
-        zokoCustomer.channelId,
-        zokoCustomer.name,
-        customerPhone,
-        customerFirstName,
-        customerLastName
-      )
-
-      // Skip low confidence matches (name score < 50%)
-      if (confidence === 'none' || nameScore < 50) {
-        console.log(
-          `[Matched] Skipping ${order.name}: phone match=${phoneMatch}, name score=${nameScore}%`
+        // Calculate match confidence (phone + name)
+        const { phoneMatch, nameScore, confidence } = calculateMatchConfidence(
+          zokoCustomer.channelId,
+          zokoCustomer.name,
+          customerPhone,
+          customerFirstName,
+          customerLastName
         )
+
+        // Phone match is the primary identifier - accept if phone matches
+        // Name score is informational only (names often differ between systems)
+        if (!phoneMatch) {
+          console.log(`[Matched] Skipping ${order.name}: phone doesn't match`)
+          continue
+        }
+
+        // Get Zoko messages and find images before order
+        const messages = await getCustomerMessages(zokoCustomer.id)
+
+        if (!Array.isArray(messages)) continue
+
+        const images = findImagesBeforeOrder(messages, order.createdAt, 7)
+
+        // Skip if no images found before order
+        if (images.length === 0) {
+          console.log(`[Matched] Skipping ${order.name}: no images found before order date`)
+          continue
+        }
+
+        // Get context messages around first image
+        const contextMessages = getContextMessages(messages, images[0].timestamp)
+
+        // Build matched conversation
+        matchedConversations.push({
+          order: {
+            id: order.id,
+            name: order.name,
+            createdAt: order.createdAt,
+            totalPrice: order.totalPriceSet.shopMoney.amount,
+            currency: order.totalPriceSet.shopMoney.currencyCode,
+            services: extractServicesFromOrder(order),
+          },
+          customer: {
+            id: zokoCustomer.id,
+            name: zokoCustomer.name,
+            phone: zokoCustomer.channelId,
+          },
+          matchConfidence: confidence,
+          nameScore,
+          images,
+          contextMessages,
+        })
+
+        console.log(
+          `[Matched] ✓ ${order.name} -> ${zokoCustomer.name} (${confidence}, ${nameScore}% name match, ${images.length} images)`
+        )
+      } catch (orderError) {
+        // Log error but continue processing other orders
+        console.error(`[Matched] Error processing ${order.name}:`, orderError instanceof Error ? orderError.message : orderError)
         continue
       }
-
-      // Get Zoko messages and find images before order
-      const messages = await getCustomerMessages(zokoCustomer.id)
-
-      if (!Array.isArray(messages)) continue
-
-      const images = findImagesBeforeOrder(messages, order.createdAt, 7)
-
-      // Skip if no images found before order
-      if (images.length === 0) {
-        console.log(`[Matched] Skipping ${order.name}: no images found before order date`)
-        continue
-      }
-
-      // Get context messages around first image
-      const contextMessages = getContextMessages(messages, images[0].timestamp)
-
-      // Build matched conversation
-      matchedConversations.push({
-        order: {
-          id: order.id,
-          name: order.name,
-          createdAt: order.createdAt,
-          totalPrice: order.totalPriceSet.shopMoney.amount,
-          currency: order.totalPriceSet.shopMoney.currencyCode,
-          services: extractServicesFromOrder(order),
-        },
-        customer: {
-          id: zokoCustomer.id,
-          name: zokoCustomer.name,
-          phone: zokoCustomer.channelId,
-        },
-        matchConfidence: confidence,
-        nameScore,
-        images,
-        contextMessages,
-      })
-
-      console.log(
-        `[Matched] ✓ ${order.name} -> ${zokoCustomer.name} (${confidence}, ${nameScore}% name match, ${images.length} images)`
-      )
     }
 
     console.log(

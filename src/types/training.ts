@@ -60,6 +60,19 @@ export interface ZokoImage {
   timestamp: string
 }
 
+// Simplified order info for training display
+export interface MatchingOrder {
+  id: string
+  name: string           // Order number like #1234
+  createdAt: string
+  totalPrice: string
+  lineItems: Array<{
+    title: string
+    quantity: number
+    price: string
+  }>
+}
+
 // Group of images (same item, different angles)
 export interface ZokoConversationForTraining {
   customerId: string
@@ -72,8 +85,10 @@ export interface ZokoConversationForTraining {
   imageCaption?: string
   messageId?: string
   timestamp: string
-  // Whether this customer has Shopify orders (prioritized)
+  // Whether this customer has Shopify orders matching this image group
   hasOrders?: boolean
+  // Matching orders (created within 7 days after images were sent)
+  matchingOrders?: MatchingOrder[]
   // Messages around the images (for context)
   contextMessages: Array<{
     direction: 'FROM_CUSTOMER' | 'FROM_STORE'

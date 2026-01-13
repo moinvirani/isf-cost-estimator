@@ -311,7 +311,8 @@ export default function TrainingPage() {
   }
 
   // Check if we've gone through all conversations
-  if (!loading && currentIndex >= conversations.length) {
+  // BUT only if there's no error and we actually loaded conversations
+  if (!loading && !error && conversations.length > 0 && currentIndex >= conversations.length) {
     return (
       <main className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-2xl mx-auto text-center py-20">
@@ -473,6 +474,29 @@ export default function TrainingPage() {
               className="ml-4 px-3 py-1 bg-red-100 rounded text-sm font-medium hover:bg-red-200"
             >
               Retry
+            </button>
+          </div>
+        )}
+
+        {/* Empty State - No Matches Found */}
+        {!loading && !error && conversations.length === 0 && (
+          <div className="text-center py-20">
+            <div className="text-6xl mb-4">📭</div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">No Matches Found</h2>
+            <p className="text-gray-600 mb-4">
+              No Zoko conversations with images were found matching recent Shopify orders.
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              This could mean:<br />
+              • No orders in the last 90 days have matching Zoko customers<br />
+              • Customers didn&apos;t send images before their orders<br />
+              • Names don&apos;t match between Zoko and Shopify
+            </p>
+            <button
+              onClick={() => fetchMatchedConversations()}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+            >
+              Try Again
             </button>
           </div>
         )}

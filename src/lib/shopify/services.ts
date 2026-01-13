@@ -14,7 +14,7 @@
 import { shopifyAdminFetch } from './client'
 import type { ShopifyService } from '@/types/service'
 
-// GraphQL query to fetch service products
+// GraphQL query to fetch service products with ALL variants
 const SERVICES_QUERY = `
   query GetServiceProducts($first: Int!, $query: String!) {
     products(first: $first, query: $query) {
@@ -25,10 +25,11 @@ const SERVICES_QUERY = `
           description
           tags
           status
-          variants(first: 1) {
+          variants(first: 20) {
             edges {
               node {
                 id
+                title
                 price
               }
             }
@@ -53,6 +54,7 @@ interface ShopifyProductsResponse {
           edges: Array<{
             node: {
               id: string
+              title: string  // Variant title (e.g., "Basic", "Premium")
               price: string
             }
           }>
@@ -83,6 +85,11 @@ function extractCategory(tags: string[]): string | undefined {
  *
  * Services are identified by the "Repair" tag in Shopify.
  * Only active products are returned.
+ *
+ * Products with multiple variants create separate entries:
+ * - "Men's Shoe Shine" with variants "Basic", "Premium" becomes:
+ *   - "Men's Shoe Shine - Basic" (AED 75)
+ *   - "Men's Shoe Shine - Premium" (AED 150)
  */
 export async function fetchShopifyServices(): Promise<ShopifyService[]> {
   const data = await shopifyAdminFetch<ShopifyProductsResponse>(SERVICES_QUERY, {
@@ -91,22 +98,39 @@ export async function fetchShopifyServices(): Promise<ShopifyService[]> {
   })
 
   // Transform Shopify products into our ShopifyService type
-  const services: ShopifyService[] = data.products.edges.map(({ node }) => {
-    const variant = node.variants.edges[0]?.node
+  // Each variant becomes a separate service entry
+  const services: ShopifyService[] = []
 
-    return {
-      id: node.id,
-      variant_id: variant?.id || '',
-      title: node.title,
-      description: node.description || undefined,
-      price: parseFloat(variant?.price || '0'),
-      currency: 'AED',
-      category: extractCategory(node.tags),
-      tags: node.tags,
-      estimated_days: undefined, // ISF doesn't use this tag currently
-      is_active: node.status === 'ACTIVE',
+  for (const { node } of data.products.edges) {
+    const variants = node.variants.edges
+
+    for (const { node: variant } of variants) {
+      // If there's only one variant with "Default Title", use product title as-is
+      // Otherwise, append variant title to product title
+      const hasMultipleVariants = variants.length > 1
+      const isDefaultVariant = variant.title === 'Default Title'
+
+      const title = hasMultipleVariants && !isDefaultVariant
+        ? `${node.title} - ${variant.title}`
+        : node.title
+
+      services.push({
+        id: node.id,
+        variant_id: variant.id,
+        title,
+        description: node.description || undefined,
+        price: parseFloat(variant.price || '0'),
+        currency: 'AED',
+        category: extractCategory(node.tags),
+        tags: node.tags,
+        estimated_days: undefined,
+        is_active: node.status === 'ACTIVE',
+      })
     }
-  })
+  }
+
+  // Sort by title for easier browsing
+  services.sort((a, b) => a.title.localeCompare(b.title))
 
   return services
 }

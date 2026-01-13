@@ -163,42 +163,65 @@ Key functions:
 - `getCustomerMessages(customerId)` - Full message history
 - `findConversationsWithImages(startPage, max)` - Find convos with images
 
-### AI Training System ✅ COMPLETE
-Training page at `/training` allows staff to:
-1. **View grouped images** (all angles of same item shown together)
-2. Click thumbnails to view different angles
-3. See conversation context
-4. **Customers with orders shown first** (prioritized)
-5. **See customer's Shopify orders** (semi-automatic training)
-6. Click "Use These Services" to pre-fill from orders
-7. Save as training examples
+### AI Training System ✅ COMPLETE (Shopify-First)
+Training page at `/training` uses a **Shopify-first approach**:
+1. Fetches recent Shopify orders (90 days)
+2. Matches to Zoko customers by **phone number** (primary identifier)
+3. Finds images sent within 7 days BEFORE order date
+4. Shows only verified matches for reliable training data
 
 Key features:
-- Images sent within 15 min grouped as same item (different angles)
-- "Has Orders" badge on prioritized customers
-- Thumbnail gallery for multi-image items
-- Search filter for services
+- **Phone-priority matching**: Phone match is sufficient (names often differ between systems)
+- **Zoko phone index**: Cached for 1 hour (~37k customers, O(1) lookups)
+- **Auto pre-fill**: Services from Shopify order auto-selected
+- **Match confidence badge**: Shows name similarity % (informational)
+- **Error resilience**: Individual customer errors don't crash the whole request
 
-Files created:
-- `src/app/training/page.tsx` - Training UI with gallery + order lookup
-- `src/app/api/training/zoko-images/route.ts` - Fetch & group Zoko images
+Files:
+- `src/app/training/page.tsx` - Training UI
+- `src/app/api/training/matched-conversations/route.ts` - Shopify-first matching endpoint
 - `src/app/api/training/examples/route.ts` - Save/fetch training data
-- `src/app/api/training/orders/route.ts` - Lookup Shopify orders by phone
-- `src/lib/shopify/orders.ts` - Shopify orders client
-- `src/types/training.ts` - TypeScript types (ZokoImage, ZokoConversationForTraining)
+- `src/lib/shopify/orders.ts` - Shopify orders client (`getRecentOrders`)
+- `src/lib/zoko/client.ts` - Zoko client with phone index caching
+- `src/lib/matching/index.ts` - Phone normalization & name matching utilities
+- `src/types/training.ts` - TypeScript types
 - `supabase/migrations/005_training_examples.sql` - Database table
 
-AI learns from training:
-- Prompts updated with ISF-specific service names
-- Few-shot examples from verified training data
-- More accurate service recommendations over time
+Training workflow:
+1. Go to `/training`
+2. Each item shows: customer image + matched Shopify order + services
+3. Verify services are correct (auto-selected from order)
+4. Click "Save & Next" to save training example
+5. AI learns from verified examples over time
 
-### Next Steps
-1. Migration already run: `005_training_examples.sql` ✅
-2. Go to `/training` and train the AI with 20-30 examples
-3. Customers with orders appear first - prioritized!
-4. Click "Use These Services" from Shopify orders for fast training
-5. AI will start auto-selecting correct services
+## Ralph Autonomous Development
+
+This project is configured for Ralph - an autonomous AI agent loop that implements features iteratively.
+
+### Ralph Files
+- `prd.json` - User stories with `passes: true/false` status (root directory)
+- `prompt.md` - Agent instructions for each iteration
+- `progress.txt` - Learning log and implementation history
+
+### How to Run Ralph
+
+Using Claude Code Ralph Loop plugin:
+```
+/ralph-loop "Read prompt.md and implement the next incomplete user story from prd.json" --max-iterations 20 --completion-promise "ISF COST ESTIMATOR COMPLETE"
+```
+
+### User Story Status
+- US-001 to US-004: ✅ Complete (M1-M4)
+- US-005 to US-012: ❌ Pending (M5-M6)
+
+### Workflow Per Iteration
+1. Read `prd.json` and `progress.txt`
+2. Find first story with `passes: false`
+3. Implement acceptance criteria
+4. Run `npm run build` and `npm run lint`
+5. Commit changes
+6. Update `progress.txt` with learnings
+7. Set `passes: true` in `prd.json`
 
 ## GitHub
 Repository: https://github.com/moinvirani/isf-cost-estimator

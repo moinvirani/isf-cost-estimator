@@ -42,6 +42,7 @@ export type {
 export type {
   TrainingExample,
   CorrectService,
+  MatchingOrder,
   ZokoConversationForTraining,
   FetchZokoImagesResponse,
   SaveTrainingExampleRequest,
