@@ -14,7 +14,7 @@ import { createClient } from '@supabase/supabase-js'
 import openai from '@/lib/ai/openai'
 import { buildAnalysisMessages } from '@/lib/ai/prompts'
 import { fetchShopifyServices } from '@/lib/shopify/services'
-import type { AIAnalysisResult, AIMultiItemResponse } from '@/types/item'
+import type { AIAnalysisResult } from '@/types/item'
 
 // Supabase client for fetching training examples
 const supabase = createClient(
@@ -22,17 +22,16 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// Request body type
+// Request body type - supports multiple images of the same item
 interface AnalyzeRequest {
-  imageUrl: string
+  imageUrls: string[]   // Multiple images of the SAME item (different angles)
+  imageUrl?: string     // DEPRECATED: single image (for backward compatibility)
 }
 
-// Response type - now returns array of items (supports multi-item images)
+// Response type - returns single analysis for all images of one item
 interface AnalyzeResponse {
   success: boolean
-  items?: AIAnalysisResult[]      // Array of analyzed items
-  total_items?: number            // Total items found in image
-  analysis?: AIAnalysisResult     // DEPRECATED: kept for backward compatibility (first item)
+  analysis?: AIAnalysisResult    // Combined analysis from all images
   error?: string
 }
 
@@ -116,10 +115,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
     // Parse request body
     const body: AnalyzeRequest = await request.json()
 
+    // Support both new (imageUrls) and legacy (imageUrl) format
+    const imageUrls = body.imageUrls || (body.imageUrl ? [body.imageUrl] : [])
+
     // Validate input
-    if (!body.imageUrl) {
+    if (imageUrls.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'imageUrl is required' },
+        { success: false, error: 'At least one image URL is required' },
         { status: 400 }
       )
     }
@@ -139,14 +141,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
       fetchTrainingPatterns(),
     ])
 
-    // Build messages for GPT-4 Vision (with real service names and training patterns)
-    const messages = buildAnalysisMessages(body.imageUrl, shopifyServices, trainingPatterns)
+    // Build messages for GPT-4 Vision (with all images of the item)
+    const messages = buildAnalysisMessages(imageUrls, shopifyServices, trainingPatterns)
 
-    // Call OpenAI API
+    // Call OpenAI API - increase max_tokens for bbox data
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o', // Using GPT-4o which has vision capabilities
       messages,
-      max_tokens: 1000,
+      max_tokens: 2000, // Increased for bbox coordinates
       temperature: 0.3, // Lower temperature for more consistent analysis
     })
 
@@ -161,7 +163,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
     }
 
     // Parse the JSON response
-    let parsedResponse: AIMultiItemResponse | AIAnalysisResult
+    let parsedResponse: AIAnalysisResult
 
     try {
       // Clean the response (remove markdown code blocks if present)
@@ -185,26 +187,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
       )
     }
 
-    // Handle both new multi-item format and legacy single-item format
-    let items: AIAnalysisResult[]
-    let totalItems: number
-
-    if ('items' in parsedResponse && Array.isArray(parsedResponse.items)) {
-      // New multi-item format
-      items = parsedResponse.items
-      totalItems = parsedResponse.total_items || items.length
-    } else {
-      // Legacy single-item format - wrap in array
-      items = [parsedResponse as AIAnalysisResult]
-      totalItems = 1
-    }
-
-    // Return the analysis with both new and legacy formats
+    // Return the single analysis for this item (multiple images combined)
     return NextResponse.json({
       success: true,
-      items,
-      total_items: totalItems,
-      analysis: items[0], // Backward compatibility - first item
+      analysis: parsedResponse,
     })
   } catch (error) {
     console.error('Analysis error:', error)

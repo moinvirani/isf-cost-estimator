@@ -2,32 +2,33 @@
  * AI Analysis Prompts
  *
  * Prompts for GPT-4 Vision to analyze shoe/bag/leather images.
- * Returns structured JSON matching our AIAnalysisResult type.
+ * Supports multiple images of the same item (different angles).
+ * Returns structured JSON with bounding boxes for visual annotations.
  */
 
 import type { ShopifyService } from '@/types/service'
 
 /**
  * System prompt that sets context for the AI.
- * Explains the role and expected output format.
+ * Updated for multi-image analysis of a single item.
  */
-export const ANALYSIS_SYSTEM_PROMPT = `You are an expert leather goods assessor working for Italian Shoe Factory (ISF), a premium shoe and leather repair service in Dubai. Your job is to analyze photos of shoes, bags, and leather goods to identify:
+export const ANALYSIS_SYSTEM_PROMPT = `You are an expert leather goods assessor working for Italian Shoe Factory (ISF), a premium shoe and leather repair service in Dubai.
 
-1. How many distinct items are in the image (count pairs of shoes as ONE item each)
-2. What type each item is
-3. The material each is made of
-4. The current condition of each
-5. Any issues or damage that need repair
-6. What SPECIFIC services are needed for each item
+You will receive one or more images of the SAME item taken from different angles. Your job is to:
+1. Combine observations from ALL images to provide comprehensive analysis
+2. Identify the item type, material, condition, and brand
+3. Detect ALL issues or damage that need repair
+4. For each issue, specify which image shows it best and its location in that image
+5. Recommend specific services needed
 
-IMPORTANT: A single image may contain MULTIPLE items (e.g., 4 pairs of shoes laid out together). You must identify and analyze EACH item separately.
+IMPORTANT: All images show the SAME item from different angles. Provide ONE combined analysis.
 
 You must respond ONLY with valid JSON matching the exact structure specified. Do not include any text before or after the JSON.`
 
 /**
  * Build the user prompt with dynamic service list from Shopify
  */
-function buildUserPrompt(services: ShopifyService[]): string {
+function buildUserPrompt(services: ShopifyService[], imageCount: number): string {
   // Group services by category for better organization
   const sneakerServices = services.filter(s => s.category === 'sneakers')
   const mensServices = services.filter(s => s.category === 'mens_shoes')
@@ -55,36 +56,48 @@ function buildUserPrompt(services: ShopifyService[]): string {
     serviceList += `\nGENERAL SERVICES (applies to all):\n${generalServices.map(formatService).join('\n')}\n`
   }
 
-  return `Analyze this image and provide a detailed assessment of ALL items visible. If multiple items (pairs of shoes, bags, etc.) are in the image, analyze EACH ONE separately.
+  const imageIndexNote = imageCount > 1
+    ? `\nYou are analyzing ${imageCount} images (indexed 0 to ${imageCount - 1}). For each issue, specify which image (imageIndex) shows it best.`
+    : '\nYou are analyzing 1 image (imageIndex: 0).'
 
-Respond with ONLY valid JSON in this exact structure - ALWAYS return an array, even for single items:
+  return `Analyze ${imageCount > 1 ? 'these images' : 'this image'} of a single item and provide a detailed assessment.
+${imageIndexNote}
+
+Respond with ONLY valid JSON in this exact structure:
 
 {
-  "items": [
+  "category": "shoes" | "bags" | "other_leather",
+  "sub_type": "<specific type - for shoes: 'mens', 'womens', 'kids', 'unisex', 'sneakers'; for bags: 'handbag', 'clutch', 'backpack', 'wallet', 'briefcase', 'tote'; for other: 'belt', 'jacket', 'watch_strap', 'other'>",
+  "material": "smooth_leather" | "suede" | "nubuck" | "patent" | "exotic" | "fabric" | "synthetic" | "mixed",
+  "color": "<primary color>",
+  "brand": "<brand name if visible, or null if not identifiable>",
+  "condition": "excellent" | "good" | "fair" | "poor",
+  "issues": [
     {
-      "item_number": 1,
-      "position": "<where in image: top, middle, bottom, left, right, center>",
-      "category": "shoes" | "bags" | "other_leather",
-      "sub_type": "<specific type - for shoes: 'mens', 'womens', 'kids', 'unisex', 'sneakers'; for bags: 'handbag', 'clutch', 'backpack', 'wallet', 'briefcase', 'tote'; for other: 'belt', 'jacket', 'watch_strap', 'other'>",
-      "material": "smooth_leather" | "suede" | "nubuck" | "patent" | "exotic" | "fabric" | "synthetic" | "mixed",
-      "color": "<primary color>",
-      "brand": "<brand name if visible, or null if not identifiable>",
-      "condition": "excellent" | "good" | "fair" | "poor",
-      "issues": [
-        {
-          "type": "<issue type: scuff, stain, scratch, tear, heel_damage, sole_wear, color_fade, water_damage, mold, broken_hardware, etc.>",
-          "severity": "minor" | "moderate" | "severe",
-          "location": "<location: toe_box, heel, sole, upper, strap, handle, zipper, buckle, lining, etc.>",
-          "description": "<brief description>"
-        }
-      ],
-      "suggested_services": ["<EXACT service name from the list below>"],
-      "confidence": <0.0 to 1.0 - how confident you are in this analysis>,
-      "notes": "<any additional observations about this specific item>"
+      "type": "<issue type: scuff, stain, scratch, tear, heel_damage, sole_wear, color_fade, water_damage, mold, broken_hardware, etc.>",
+      "severity": "minor" | "moderate" | "severe",
+      "location": "<location on item: toe_box, heel, sole, upper, strap, handle, zipper, buckle, lining, etc.>",
+      "description": "<brief description>",
+      "bbox": {
+        "x": <left edge as fraction 0-1>,
+        "y": <top edge as fraction 0-1>,
+        "width": <width as fraction 0-1>,
+        "height": <height as fraction 0-1>,
+        "imageIndex": <which image shows this issue best (0-indexed)>
+      }
     }
   ],
-  "total_items": <number of items detected>
+  "suggested_services": ["<EXACT service name from the list below>"],
+  "confidence": <0.0 to 1.0 - how confident you are in this analysis>,
+  "notes": "<any additional observations>"
 }
+
+BOUNDING BOX INSTRUCTIONS:
+- bbox coordinates are NORMALIZED (0 to 1), not pixels
+- x=0 is left edge, x=1 is right edge
+- y=0 is top edge, y=1 is bottom edge
+- Draw a tight box around the issue area
+- imageIndex specifies which image (0-indexed) shows this issue most clearly
 
 AVAILABLE SERVICES - Use EXACT names from this list for suggested_services:
 ${serviceList}
@@ -97,24 +110,22 @@ CRITICAL INSTRUCTIONS for suggested_services:
 3. Recommend MINIMUM services needed - most items need just 1-2 services
 4. Match services to the detected issues
 
-Be specific about issues. If unclear, set confidence lower.`
+Be specific about issues and their locations. If unclear, set confidence lower.`
 }
 
 /**
  * Training pattern format for statistical few-shot learning
- * Aggregated from training data: issue + category + material → most common service
  */
 interface TrainingPattern {
   category: string
   material: string
   issue: string
   service: string
-  count: number  // How many times this pattern was verified
+  count: number
 }
 
 /**
  * Build statistical patterns from aggregated training data
- * Shows AI patterns like: "heel_damage on shoes (leather) → Rubber Heel (verified 12x)"
  */
 function buildStatisticalPatterns(patterns: TrainingPattern[]): string {
   if (!patterns || patterns.length === 0) return ''
@@ -122,7 +133,6 @@ function buildStatisticalPatterns(patterns: TrainingPattern[]): string {
   const totalVerifications = patterns.reduce((sum, p) => sum + p.count, 0)
 
   const patternLines = patterns.map(p => {
-    // Format: • heel_damage on shoes (smooth_leather) → Rubber Heel / Type 1 (verified 12x)
     return `• ${p.issue} on ${p.category} (${p.material}) → ${p.service} (verified ${p.count}x)`
   })
 
@@ -135,18 +145,40 @@ Use these patterns to guide your service recommendations. Higher counts = more r
 /**
  * Builds the messages array for the OpenAI API call.
  *
- * @param imageUrl - Public URL of the image to analyze
+ * @param imageUrls - Array of image URLs (multiple angles of same item)
  * @param services - Shopify services to include in the prompt
  * @param trainingPatterns - Optional training patterns for statistical few-shot learning
  * @returns Messages array ready for OpenAI chat completion
  */
 export function buildAnalysisMessages(
-  imageUrl: string,
+  imageUrls: string[],
   services: ShopifyService[],
   trainingPatterns?: TrainingPattern[]
 ) {
   const patternsSection = buildStatisticalPatterns(trainingPatterns || [])
-  const userPrompt = buildUserPrompt(services) + patternsSection
+  const userPrompt = buildUserPrompt(services, imageUrls.length) + patternsSection
+
+  // Build content array with text prompt and all images
+  const contentArray: Array<
+    | { type: 'text'; text: string }
+    | { type: 'image_url'; image_url: { url: string; detail: 'high' } }
+  > = [
+    {
+      type: 'text' as const,
+      text: userPrompt,
+    },
+  ]
+
+  // Add all images
+  for (const url of imageUrls) {
+    contentArray.push({
+      type: 'image_url' as const,
+      image_url: {
+        url,
+        detail: 'high' as const,
+      },
+    })
+  }
 
   return [
     {
@@ -155,19 +187,7 @@ export function buildAnalysisMessages(
     },
     {
       role: 'user' as const,
-      content: [
-        {
-          type: 'text' as const,
-          text: userPrompt,
-        },
-        {
-          type: 'image_url' as const,
-          image_url: {
-            url: imageUrl,
-            detail: 'high' as const,
-          },
-        },
-      ],
+      content: contentArray,
     },
   ]
 }

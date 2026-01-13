@@ -43,12 +43,22 @@ export type ConditionRating = 'excellent' | 'good' | 'fair' | 'poor'
 // AI Analysis Types
 // ============================================
 
+/** Bounding box for issue location (normalized 0-1 coordinates) */
+export interface IssueBoundingBox {
+  x: number           // Left edge (0-1)
+  y: number           // Top edge (0-1)
+  width: number       // Width (0-1)
+  height: number      // Height (0-1)
+  imageIndex: number  // Which image in the group shows this issue (0-indexed)
+}
+
 /** A single issue detected by the AI */
 export interface DetectedIssue {
   type: string          // e.g., 'scuff', 'stain', 'heel_damage'
   severity: 'minor' | 'moderate' | 'severe'
   location: string      // e.g., 'toe_box', 'heel', 'sole'
   description: string   // Human-readable description
+  bbox?: IssueBoundingBox  // Bounding box for visual annotation
 }
 
 /** Full AI analysis result for a single item */
@@ -114,8 +124,36 @@ export interface EstimationItem {
 export type NewEstimationItem = Omit<EstimationItem, 'id' | 'created_at'>
 
 /** Item with its services loaded */
-import type { ItemService } from './service'
+import type { ItemService, ShopifyService } from './service'
 
 export interface EstimationItemWithServices extends EstimationItem {
   services: ItemService[]
+}
+
+// ============================================
+// Item Group Types (for multi-image workflow)
+// ============================================
+
+/** Single image within an item group */
+export interface ItemGroupImage {
+  id: string
+  url: string           // Supabase storage URL
+  previewUrl: string    // Local preview or same as url
+}
+
+/** Selected service for an item group */
+export interface SelectedServiceForItem {
+  service: ShopifyService
+  quantity: number
+  aiSuggested: boolean
+}
+
+/** An item group with multiple images (different angles of same item) */
+export interface EstimationItemGroup {
+  id: string
+  images: ItemGroupImage[]
+  analysis: AIAnalysisResult | null
+  isAnalyzing: boolean
+  analysisError: string | null
+  selectedServices: SelectedServiceForItem[]
 }
