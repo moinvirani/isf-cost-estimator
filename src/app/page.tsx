@@ -447,6 +447,7 @@ export default function Home() {
                 ai_sub_type: image.analysis.sub_type,
                 ai_material: image.analysis.material,
                 ai_condition: image.analysis.condition,
+                ai_issues: image.analysis.issues || [],
                 ai_suggested_services: image.analysis.suggested_services,
                 correct_services: image.selectedServices.map(s => ({
                   service_name: s.service.title,

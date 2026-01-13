@@ -101,27 +101,35 @@ Be specific about issues. If unclear, set confidence lower.`
 }
 
 /**
- * Training example format for few-shot learning
+ * Training pattern format for statistical few-shot learning
+ * Aggregated from training data: issue + category + material → most common service
  */
-interface TrainingExampleForPrompt {
-  ai_category?: string
-  ai_material?: string
-  ai_condition?: string
-  correct_services: Array<{ service_name: string }>
+interface TrainingPattern {
+  category: string
+  material: string
+  issue: string
+  service: string
+  count: number  // How many times this pattern was verified
 }
 
 /**
- * Build few-shot examples from training data
+ * Build statistical patterns from aggregated training data
+ * Shows AI patterns like: "heel_damage on shoes (leather) → Rubber Heel (verified 12x)"
  */
-function buildFewShotExamples(examples: TrainingExampleForPrompt[]): string {
-  if (!examples || examples.length === 0) return ''
+function buildStatisticalPatterns(patterns: TrainingPattern[]): string {
+  if (!patterns || patterns.length === 0) return ''
 
-  const exampleStrings = examples.slice(0, 5).map((ex, i) => {
-    const services = ex.correct_services.map(s => s.service_name).join(', ')
-    return `Example ${i + 1}: ${ex.ai_category || 'item'} (${ex.ai_material || 'leather'}, ${ex.ai_condition || 'fair'} condition) → Services: ${services}`
+  const totalVerifications = patterns.reduce((sum, p) => sum + p.count, 0)
+
+  const patternLines = patterns.map(p => {
+    // Format: • heel_damage on shoes (smooth_leather) → Rubber Heel / Type 1 (verified 12x)
+    return `• ${p.issue} on ${p.category} (${p.material}) → ${p.service} (verified ${p.count}x)`
   })
 
-  return `\n\nLEARNED EXAMPLES from past assessments:\n${exampleStrings.join('\n')}\n\nUse these examples to guide your service recommendations.`
+  return `\n\nLEARNED PATTERNS from ${totalVerifications} past corrections:
+${patternLines.join('\n')}
+
+Use these patterns to guide your service recommendations. Higher counts = more reliable patterns.`
 }
 
 /**
@@ -129,16 +137,16 @@ function buildFewShotExamples(examples: TrainingExampleForPrompt[]): string {
  *
  * @param imageUrl - Public URL of the image to analyze
  * @param services - Shopify services to include in the prompt
- * @param trainingExamples - Optional training examples for few-shot learning
+ * @param trainingPatterns - Optional training patterns for statistical few-shot learning
  * @returns Messages array ready for OpenAI chat completion
  */
 export function buildAnalysisMessages(
   imageUrl: string,
   services: ShopifyService[],
-  trainingExamples?: TrainingExampleForPrompt[]
+  trainingPatterns?: TrainingPattern[]
 ) {
-  const fewShotSection = buildFewShotExamples(trainingExamples || [])
-  const userPrompt = buildUserPrompt(services) + fewShotSection
+  const patternsSection = buildStatisticalPatterns(trainingPatterns || [])
+  const userPrompt = buildUserPrompt(services) + patternsSection
 
   return [
     {

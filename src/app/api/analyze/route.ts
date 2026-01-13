@@ -36,21 +36,77 @@ interface AnalyzeResponse {
   error?: string
 }
 
+// Training pattern type for aggregated data
+interface TrainingPattern {
+  category: string
+  material: string
+  issue: string
+  service: string
+  count: number
+}
+
 /**
- * Fetch recent training examples for few-shot learning
+ * Fetch and aggregate training patterns for statistical few-shot learning
+ * Returns patterns like: "heel_damage on shoes (leather) → Rubber Heel (verified 12x)"
  */
-async function fetchTrainingExamples() {
+async function fetchTrainingPatterns(): Promise<TrainingPattern[]> {
   try {
+    // Fetch more examples for statistical significance
     const { data } = await supabase
       .from('training_examples')
-      .select('ai_category, ai_material, ai_condition, correct_services')
+      .select('ai_category, ai_material, ai_issues, correct_services')
       .eq('status', 'verified')
       .order('created_at', { ascending: false })
-      .limit(10)
+      .limit(100)
 
-    return data || []
+    if (!data || data.length === 0) return []
+
+    // Aggregate: count how often each issue → service mapping occurs
+    const patterns = new Map<string, { count: number; services: string[] }>()
+
+    for (const ex of data) {
+      const category = ex.ai_category || 'item'
+      const material = ex.ai_material || 'leather'
+      const issues = (ex.ai_issues || []) as Array<{ type: string }>
+      const services = (ex.correct_services || []) as Array<{ service_name: string }>
+
+      // If no issues, use 'general_care' as a catch-all
+      const issueTypes = issues.length > 0
+        ? issues.map(i => i.type)
+        : ['general_care']
+
+      for (const issueType of issueTypes) {
+        const key = `${category}|${material}|${issueType}`
+        const serviceNames = services.map(s => s.service_name)
+
+        if (!patterns.has(key)) {
+          patterns.set(key, { count: 0, services: [] })
+        }
+        const p = patterns.get(key)!
+        p.count++
+        p.services.push(...serviceNames)
+      }
+    }
+
+    // Return patterns with count >= 2 (statistically meaningful)
+    return Array.from(patterns.entries())
+      .filter(([, v]) => v.count >= 2)
+      .map(([key, v]) => {
+        const [category, material, issue] = key.split('|')
+        // Find most common service for this pattern
+        const serviceCounts = v.services.reduce((acc, s) => {
+          acc[s] = (acc[s] || 0) + 1
+          return acc
+        }, {} as Record<string, number>)
+        const topService = Object.entries(serviceCounts)
+          .sort((a, b) => b[1] - a[1])[0]?.[0] || ''
+
+        return { category, material, issue, service: topService, count: v.count }
+      })
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15) // Top 15 patterns
   } catch (error) {
-    console.error('Failed to fetch training examples:', error)
+    console.error('Failed to fetch training patterns:', error)
     return []
   }
 }
@@ -77,14 +133,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
       )
     }
 
-    // Fetch Shopify services and training examples in parallel
-    const [shopifyServices, trainingExamples] = await Promise.all([
+    // Fetch Shopify services and training patterns in parallel
+    const [shopifyServices, trainingPatterns] = await Promise.all([
       fetchShopifyServices(),
-      fetchTrainingExamples(),
+      fetchTrainingPatterns(),
     ])
 
-    // Build messages for GPT-4 Vision (with real service names and training examples)
-    const messages = buildAnalysisMessages(body.imageUrl, shopifyServices, trainingExamples)
+    // Build messages for GPT-4 Vision (with real service names and training patterns)
+    const messages = buildAnalysisMessages(body.imageUrl, shopifyServices, trainingPatterns)
 
     // Call OpenAI API
     const completion = await openai.chat.completions.create({
