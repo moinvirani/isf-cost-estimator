@@ -179,6 +179,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
       cleanContent = cleanContent.trim()
 
       parsedResponse = JSON.parse(cleanContent)
+
+      // Debug: Log bbox data to help troubleshoot annotation positioning
+      if (parsedResponse.issues?.length > 0) {
+        console.log('AI detected issues with bbox data:')
+        parsedResponse.issues.forEach((issue: { type: string; bbox?: { x: number; y: number; width: number; height: number; imageIndex: number } }, i: number) => {
+          console.log(`  Issue ${i + 1}: ${issue.type}`)
+          if (issue.bbox) {
+            console.log(`    bbox: x=${issue.bbox.x}, y=${issue.bbox.y}, w=${issue.bbox.width}, h=${issue.bbox.height}, img=${issue.bbox.imageIndex}`)
+          } else {
+            console.log(`    bbox: NOT PROVIDED`)
+          }
+        })
+      }
     } catch (parseError) {
       console.error('Failed to parse AI response:', content)
       return NextResponse.json(

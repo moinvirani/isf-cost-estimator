@@ -92,12 +92,32 @@ Respond with ONLY valid JSON in this exact structure:
   "notes": "<any additional observations>"
 }
 
-BOUNDING BOX INSTRUCTIONS:
-- bbox coordinates are NORMALIZED (0 to 1), not pixels
-- x=0 is left edge, x=1 is right edge
-- y=0 is top edge, y=1 is bottom edge
-- Draw a tight box around the issue area
-- imageIndex specifies which image (0-indexed) shows this issue most clearly
+BOUNDING BOX INSTRUCTIONS (CRITICAL - follow carefully):
+- ALL coordinates are NORMALIZED fractions from 0.0 to 1.0 (NOT pixels!)
+- x=0.0 is LEFT edge of image, x=1.0 is RIGHT edge
+- y=0.0 is TOP edge of image, y=1.0 is BOTTOM edge
+- width and height are also fractions (e.g., 0.2 = 20% of image)
+- imageIndex: which image (0-indexed) shows this issue most clearly
+
+EXAMPLE: For a scuff on the toe box in the lower-left area of image 0:
+{
+  "bbox": {
+    "x": 0.1,      // 10% from left edge
+    "y": 0.6,      // 60% from top (lower area)
+    "width": 0.25, // covers 25% of image width
+    "height": 0.2, // covers 20% of image height
+    "imageIndex": 0
+  }
+}
+
+GUIDELINES for accurate bbox:
+- If issue is in LEFT third of image: x should be 0.0-0.33
+- If issue is in CENTER: x should be 0.33-0.66
+- If issue is in RIGHT third: x should be 0.66-1.0
+- If issue is in TOP third: y should be 0.0-0.33
+- If issue is in MIDDLE: y should be 0.33-0.66
+- If issue is in BOTTOM third: y should be 0.66-1.0
+- Make width/height large enough to encompass the entire issue area (typically 0.15-0.35)
 
 AVAILABLE SERVICES - Use EXACT names from this list for suggested_services:
 ${serviceList}
