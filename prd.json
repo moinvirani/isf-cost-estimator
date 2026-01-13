@@ -1,0 +1,197 @@
+{
+  "project": "ISF Cost Estimator",
+  "branchName": "main",
+  "description": "AI-powered estimation tool for Italian Shoe Factory - analyzes customer photos, suggests repair services, generates Shopify draft orders",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project Foundation",
+      "description": "As a developer, I need the project foundation set up with Next.js 14, TypeScript, Tailwind, and Supabase database schema so that I can build features on a solid base.",
+      "acceptanceCriteria": [
+        "Next.js 14 project with App Router and TypeScript",
+        "Tailwind CSS configured with mobile-first approach",
+        "Supabase database with estimations, estimation_items, item_services tables",
+        "TypeScript interfaces defined for all data models",
+        "Environment variables configured for Supabase"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "M1 Complete - Foundation established"
+    },
+    {
+      "id": "US-002",
+      "title": "Image Upload System",
+      "description": "As ISF staff, I want to upload photos via camera capture, drag-and-drop, or file picker so that I can easily add customer item photos for analysis.",
+      "acceptanceCriteria": [
+        "Camera capture works on mobile devices using getUserMedia",
+        "Drag-and-drop zone accepts image files",
+        "File picker as fallback option",
+        "Image preview gallery shows uploaded images",
+        "Images upload to Supabase Storage bucket 'item-images'",
+        "Support for JPG, PNG, HEIC formats",
+        "Up to 10 images per session"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "M2 Complete - Image upload working"
+    },
+    {
+      "id": "US-003",
+      "title": "AI Image Analysis",
+      "description": "As ISF staff, I want the AI to analyze uploaded photos and detect item type, material, condition, and issues so that I get automatic service suggestions.",
+      "acceptanceCriteria": [
+        "OpenAI GPT-4 Vision integration working",
+        "API route /api/analyze accepts images and returns analysis",
+        "Detects: item type (shoe/bag/leather), material, condition",
+        "Identifies issues (scuffs, stains, heel damage, etc.)",
+        "Suggests appropriate services with confidence percentage",
+        "ItemCard component displays analysis results",
+        "ConfidenceIndicator shows AI confidence visually",
+        "Analysis completes in under 10 seconds"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "M3 Complete - AI analysis working"
+    },
+    {
+      "id": "US-004",
+      "title": "Shopify Service Integration",
+      "description": "As ISF staff, I want to see available services from Shopify and select them for items so that I can build accurate estimates.",
+      "acceptanceCriteria": [
+        "Shopify Admin API client configured",
+        "API route /api/services fetches products tagged 'Repair'",
+        "Services filtered by category (Men's, Women's, Sneaker, Bag)",
+        "ServiceSelector component shows services with AI suggestions highlighted",
+        "Price calculation with material/condition modifiers",
+        "PriceSummary component shows totals breakdown",
+        "All prices displayed in AED"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "M4 Complete - Shopify integration working"
+    },
+    {
+      "id": "US-005",
+      "title": "Customer Information Input",
+      "description": "As ISF staff, I want to enter customer details (name, phone, email) so that the draft order is associated with the correct customer.",
+      "acceptanceCriteria": [
+        "Customer info form with name, phone, email fields",
+        "Phone number validation for UAE format",
+        "Email validation",
+        "Form state persists during estimation workflow",
+        "Customer info passed to draft order creation"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Part of M5 - Draft Order Creation"
+    },
+    {
+      "id": "US-006",
+      "title": "Shopify Draft Order Creation",
+      "description": "As ISF staff, I want to generate a Shopify draft order with all selected services so that customers can checkout easily.",
+      "acceptanceCriteria": [
+        "API route /api/draft-orders creates Shopify draft order",
+        "Draft order includes all selected services as line items",
+        "Customer info attached to draft order",
+        "Returns checkout URL (invoice_url) for customer",
+        "Error handling for API failures",
+        "'Generate Draft Order' button on PriceSummary component"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Part of M5 - Draft Order Creation"
+    },
+    {
+      "id": "US-007",
+      "title": "Order Confirmation Display",
+      "description": "As ISF staff, I want to see order confirmation with Shopify link after generating a draft order so that I can share it with the customer.",
+      "acceptanceCriteria": [
+        "Success modal/screen after draft order creation",
+        "Display draft order number",
+        "Display clickable checkout URL",
+        "Copy-to-clipboard button for URL",
+        "Option to start new estimation"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Part of M5 - Draft Order Creation"
+    },
+    {
+      "id": "US-008",
+      "title": "Customer Message Generation",
+      "description": "As ISF staff, I want to generate a templated customer message with estimate details so that I can quickly respond via WhatsApp.",
+      "acceptanceCriteria": [
+        "Template generates message with greeting",
+        "Lists items and selected services",
+        "Shows total price in AED",
+        "Includes estimated turnaround time",
+        "Includes checkout link",
+        "Copy-to-clipboard button for message",
+        "Editable message before copying"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Part of M5/M6"
+    },
+    {
+      "id": "US-009",
+      "title": "Estimation History List",
+      "description": "As ISF staff, I want to view past estimations so that I can reference previous work.",
+      "acceptanceCriteria": [
+        "History page at /estimations",
+        "List shows recent estimations with date, customer, total",
+        "Pagination or infinite scroll for many records",
+        "Click to view estimation details",
+        "Estimations saved to Supabase after draft order creation"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "M6 - History & Polish"
+    },
+    {
+      "id": "US-010",
+      "title": "Estimation Detail View",
+      "description": "As ISF staff, I want to view and potentially reopen past estimations so that I can handle follow-up requests.",
+      "acceptanceCriteria": [
+        "Detail page at /estimations/[id]",
+        "Shows all items, services, prices from saved estimation",
+        "Shows customer info and order status",
+        "Link to Shopify order if exists",
+        "Option to duplicate/reopen estimation"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "M6 - History & Polish"
+    },
+    {
+      "id": "US-011",
+      "title": "Error Handling & Loading States",
+      "description": "As ISF staff, I want clear feedback during operations and helpful error messages so that I understand what's happening.",
+      "acceptanceCriteria": [
+        "Loading spinners during API calls",
+        "Skeleton loaders for content",
+        "Toast notifications for success/error",
+        "Retry buttons for failed operations",
+        "Graceful handling of network errors"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "M6 - History & Polish"
+    },
+    {
+      "id": "US-012",
+      "title": "Mobile Optimization",
+      "description": "As ISF staff using a phone, I want the app to work smoothly on mobile so that I can create estimates in-store.",
+      "acceptanceCriteria": [
+        "All features work on iOS Safari and Chrome Android",
+        "Touch-friendly button sizes (min 44px)",
+        "Responsive layout adapts to phone/tablet/desktop",
+        "Camera capture works reliably on mobile",
+        "No horizontal scroll on any screen size"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "M6 - History & Polish"
+    }
+  ]
+}

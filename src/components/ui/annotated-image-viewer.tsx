@@ -41,7 +41,10 @@ export function AnnotatedImageViewer({
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [imageSize, setImageSize] = useState({ width: 0, height: 0 })
+  // Natural image dimensions (original size)
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 })
+  // Displayed image dimensions (actual rendered size)
+  const [displaySize, setDisplaySize] = useState({ width: 0, height: 0 })
   const imageRef = useRef<HTMLImageElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -59,11 +62,39 @@ export function AnnotatedImageViewer({
     }
   }, [isModalOpen, modalImageIndex])
 
+  // Update display size when image loads or window resizes
+  const updateDisplaySize = useCallback(() => {
+    const img = imageRef.current
+    if (!img) return
+
+    // Get the actual rendered dimensions of the image
+    const rect = img.getBoundingClientRect()
+    setDisplaySize({ width: rect.width, height: rect.height })
+  }, [])
+
   // Handle image load to get dimensions
   const handleImageLoad = useCallback((e: React.SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget
-    setImageSize({ width: img.naturalWidth, height: img.naturalHeight })
+    setNaturalSize({ width: img.naturalWidth, height: img.naturalHeight })
+
+    // Wait for layout to settle, then get display size
+    requestAnimationFrame(() => {
+      const rect = img.getBoundingClientRect()
+      setDisplaySize({ width: rect.width, height: rect.height })
+    })
   }, [])
+
+  // Update display size on resize
+  useEffect(() => {
+    if (!isModalOpen) return
+
+    const handleResize = () => {
+      requestAnimationFrame(updateDisplaySize)
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [isModalOpen, updateDisplaySize])
 
   // Handle thumbnail click
   const handleThumbnailClick = (index: number) => {
@@ -157,38 +188,38 @@ export function AnnotatedImageViewer({
   const handleDownload = useCallback(async () => {
     const canvas = canvasRef.current
     const img = imageRef.current
-    if (!canvas || !img) return
+    if (!canvas || !img || naturalSize.width === 0) return
 
-    // Set canvas size to image size
-    canvas.width = imageSize.width
-    canvas.height = imageSize.height
+    // Set canvas size to natural image size
+    canvas.width = naturalSize.width
+    canvas.height = naturalSize.height
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     // Draw image
-    ctx.drawImage(img, 0, 0, imageSize.width, imageSize.height)
+    ctx.drawImage(img, 0, 0, naturalSize.width, naturalSize.height)
 
     // Draw annotations
     currentIssues.forEach((issue, index) => {
       if (!issue.bbox) return
 
       const colors = severityColors[issue.severity]
-      const x = issue.bbox.x * imageSize.width
-      const y = issue.bbox.y * imageSize.height
-      const width = issue.bbox.width * imageSize.width
-      const height = issue.bbox.height * imageSize.height
+      const x = issue.bbox.x * naturalSize.width
+      const y = issue.bbox.y * naturalSize.height
+      const width = issue.bbox.width * naturalSize.width
+      const height = issue.bbox.height * naturalSize.height
 
       // Calculate circle center and radius
       const centerX = x + width / 2
       const centerY = y + height / 2
-      const radius = Math.max(width, height) / 2 + 20
+      const radius = Math.max(width, height) / 2 + 30
 
       // Draw circle
       ctx.beginPath()
       ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI)
       ctx.strokeStyle = colors.stroke
-      ctx.lineWidth = 4
+      ctx.lineWidth = 6
       ctx.stroke()
       ctx.fillStyle = colors.fill
       ctx.fill()
@@ -196,7 +227,7 @@ export function AnnotatedImageViewer({
       // Draw number label
       const labelX = centerX + radius * 0.7
       const labelY = centerY - radius * 0.7
-      const labelRadius = 24
+      const labelRadius = 30
 
       ctx.beginPath()
       ctx.arc(labelX, labelY, labelRadius, 0, 2 * Math.PI)
@@ -204,16 +235,16 @@ export function AnnotatedImageViewer({
       ctx.fill()
 
       ctx.fillStyle = 'white'
-      ctx.font = 'bold 20px Arial'
+      ctx.font = 'bold 24px Arial'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(String(index + 1), labelX, labelY)
 
-      // Draw issue type label
+      // Draw issue type label below circle
       const labelText = issue.type.replace(/_/g, ' ')
       ctx.fillStyle = colors.stroke
-      ctx.font = 'bold 16px Arial'
-      ctx.fillText(labelText, centerX, centerY + radius + 24)
+      ctx.font = 'bold 20px Arial'
+      ctx.fillText(labelText, centerX, centerY + radius + 30)
     })
 
     // Trigger download
@@ -221,7 +252,7 @@ export function AnnotatedImageViewer({
     link.download = `isf-analysis-${Date.now()}.png`
     link.href = canvas.toDataURL('image/png')
     link.click()
-  }, [imageSize, currentIssues])
+  }, [naturalSize, currentIssues])
 
   // Navigate images in modal
   const goToImage = (index: number) => {
@@ -326,75 +357,78 @@ export function AnnotatedImageViewer({
                 transition: isDragging ? 'none' : 'transform 0.1s ease-out',
               }}
             >
-              {/* Main image */}
-              <img
-                ref={imageRef}
-                src={images[modalImageIndex].url}
-                alt={`Image ${modalImageIndex + 1}`}
-                className="max-w-full max-h-full object-contain"
-                onLoad={handleImageLoad}
-                crossOrigin="anonymous"
-                draggable={false}
-              />
+              {/* Image wrapper - this is the key fix! Position SVG relative to this */}
+              <div className="relative inline-block">
+                {/* Main image */}
+                <img
+                  ref={imageRef}
+                  src={images[modalImageIndex].url}
+                  alt={`Image ${modalImageIndex + 1}`}
+                  className="max-w-full max-h-[calc(100vh-200px)] object-contain"
+                  onLoad={handleImageLoad}
+                  crossOrigin="anonymous"
+                  draggable={false}
+                />
 
-              {/* SVG overlay with annotations */}
-              {imageSize.width > 0 && (
-                <svg
-                  className="absolute inset-0 pointer-events-none"
-                  viewBox={`0 0 ${imageSize.width} ${imageSize.height}`}
-                  style={{
-                    width: imageRef.current?.clientWidth,
-                    height: imageRef.current?.clientHeight,
-                  }}
-                >
-                  {currentIssues.map((issue, index) => {
-                    if (!issue.bbox) return null
+                {/* SVG overlay - now positioned relative to the image wrapper */}
+                {displaySize.width > 0 && naturalSize.width > 0 && (
+                  <svg
+                    className="absolute top-0 left-0 pointer-events-none"
+                    width={displaySize.width}
+                    height={displaySize.height}
+                    viewBox={`0 0 ${naturalSize.width} ${naturalSize.height}`}
+                    preserveAspectRatio="xMidYMid meet"
+                  >
+                    {currentIssues.map((issue, index) => {
+                      if (!issue.bbox) return null
 
-                    const colors = severityColors[issue.severity]
-                    const x = issue.bbox.x * imageSize.width
-                    const y = issue.bbox.y * imageSize.height
-                    const width = issue.bbox.width * imageSize.width
-                    const height = issue.bbox.height * imageSize.height
+                      const colors = severityColors[issue.severity]
+                      // bbox coordinates are normalized (0-1), convert to natural image pixels
+                      const x = issue.bbox.x * naturalSize.width
+                      const y = issue.bbox.y * naturalSize.height
+                      const width = issue.bbox.width * naturalSize.width
+                      const height = issue.bbox.height * naturalSize.height
 
-                    // Circle center and radius
-                    const centerX = x + width / 2
-                    const centerY = y + height / 2
-                    const radius = Math.max(width, height) / 2 + 20
+                      // Circle center and radius
+                      const centerX = x + width / 2
+                      const centerY = y + height / 2
+                      const radius = Math.max(width, height) / 2 + 30
 
-                    return (
-                      <g key={index}>
-                        {/* Circle around issue */}
-                        <circle
-                          cx={centerX}
-                          cy={centerY}
-                          r={radius}
-                          stroke={colors.stroke}
-                          strokeWidth="4"
-                          fill={colors.fill}
-                        />
-                        {/* Number label */}
-                        <circle
-                          cx={centerX + radius * 0.7}
-                          cy={centerY - radius * 0.7}
-                          r="18"
-                          fill={colors.stroke}
-                        />
-                        <text
-                          x={centerX + radius * 0.7}
-                          y={centerY - radius * 0.7}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fill="white"
-                          fontSize="14"
-                          fontWeight="bold"
-                        >
-                          {index + 1}
-                        </text>
-                      </g>
-                    )
-                  })}
-                </svg>
-              )}
+                      return (
+                        <g key={index}>
+                          {/* Circle around issue */}
+                          <circle
+                            cx={centerX}
+                            cy={centerY}
+                            r={radius}
+                            stroke={colors.stroke}
+                            strokeWidth="6"
+                            fill={colors.fill}
+                          />
+                          {/* Number label */}
+                          <circle
+                            cx={centerX + radius * 0.7}
+                            cy={centerY - radius * 0.7}
+                            r="24"
+                            fill={colors.stroke}
+                          />
+                          <text
+                            x={centerX + radius * 0.7}
+                            y={centerY - radius * 0.7}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill="white"
+                            fontSize="18"
+                            fontWeight="bold"
+                          >
+                            {index + 1}
+                          </text>
+                        </g>
+                      )
+                    })}
+                  </svg>
+                )}
+              </div>
             </div>
 
             {/* Hidden canvas for download */}

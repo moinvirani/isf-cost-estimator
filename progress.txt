@@ -1,0 +1,122 @@
+# ISF Cost Estimator - Progress Log
+
+## Codebase Patterns (Updated as discovered)
+
+### General
+- Next.js 14 with App Router - pages in `src/app/`, API routes in `src/app/api/`
+- TypeScript strict mode - all props/returns typed
+- Tailwind CSS with mobile-first approach
+- Currency is AED throughout
+
+### Components
+- Client components use `'use client'` directive
+- Components in `src/components/estimation/` for estimation workflow
+- Props interfaces defined inline or in types folder
+
+### API Routes
+- Use NextRequest/NextResponse from next/server
+- Return JSON with `{ data }` or `{ error }` shape
+- Try/catch with appropriate status codes
+
+### Shopify
+- Admin API client at `src/lib/shopify/client.ts`
+- Services tagged with "Repair" and category tags
+- Products have variants with prices
+
+### Supabase
+- Client at `src/lib/supabase/client.ts`
+- Storage bucket: `item-images`
+- RLS policies configured for public access
+
+---
+
+## 2024-XX-XX - US-001: Project Foundation
+
+### Implementation
+- Initialized Next.js 14 project with TypeScript and Tailwind
+- Created Supabase project and database schema
+- Defined TypeScript interfaces for all data models
+
+### Files
+- `src/types/estimation.ts`
+- `src/types/item.ts`
+- `src/types/service.ts`
+- `supabase/migrations/003_complete_setup.sql`
+
+### Learnings
+- Supabase migrations run via dashboard or CLI
+- Use `NEXT_PUBLIC_` prefix for client-side env vars
+
+---
+
+## 2024-XX-XX - US-002: Image Upload System
+
+### Implementation
+- Built unified ImageUpload component with camera, drag-drop, file picker
+- Integrated Supabase Storage for image uploads
+- Created image preview gallery with remove functionality
+
+### Files
+- `src/components/estimation/image-upload.tsx`
+- `src/lib/supabase/storage.ts`
+- `supabase/migrations/004_storage_policy.sql`
+
+### Learnings
+- getUserMedia requires HTTPS in production
+- HEIC conversion may be needed for iOS photos
+- Storage RLS policies needed for public bucket access
+
+---
+
+## 2024-XX-XX - US-003: AI Image Analysis
+
+### Implementation
+- Integrated OpenAI GPT-4 Vision for image analysis
+- Created analysis API route with structured JSON output
+- Built ItemCard and ConfidenceIndicator components
+
+### Files
+- `src/lib/ai/openai.ts`
+- `src/lib/ai/prompts.ts`
+- `src/app/api/analyze/route.ts`
+- `src/components/estimation/item-card.tsx`
+- `src/components/estimation/confidence-indicator.tsx`
+
+### Learnings
+- GPT-4 Vision needs base64 or URL for images
+- Structured prompts with JSON schema improve consistency
+- Confidence scores help staff know when to double-check
+
+---
+
+## 2024-XX-XX - US-004: Shopify Service Integration
+
+### Implementation
+- Built Shopify Admin API client
+- Created services API route with category filtering
+- Built ServiceSelector with AI suggestion highlighting
+- Implemented price calculator with modifiers
+
+### Files
+- `src/lib/shopify/client.ts`
+- `src/lib/shopify/services.ts`
+- `src/app/api/services/route.ts`
+- `src/components/estimation/service-selector.tsx`
+- `src/lib/pricing/calculator.ts`
+- `src/components/estimation/price-summary.tsx`
+
+### Learnings
+- Shopify services identified by "Repair" tag
+- Category tags: "Men's Repair", "Women's Repair", "Sneaker Repair", "bag repair"
+- Price modifiers based on material (exotic +20%) and condition (poor +15%)
+- Products can have multiple tags - shown for all matching categories
+
+---
+
+## Next Up: US-005 - Customer Information Input
+
+The next story should:
+- Create a customer info form component
+- Add fields for name, phone (UAE format), email
+- Integrate into the estimation workflow on page.tsx
+- Pass customer data to draft order creation (US-006)
