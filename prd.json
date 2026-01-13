@@ -82,8 +82,8 @@
         "Customer info passed to draft order creation"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "Part of M5 - Draft Order Creation"
+      "passes": true,
+      "notes": "M5 Complete - CustomerForm component with validation"
     },
     {
       "id": "US-006",
@@ -98,8 +98,8 @@
         "'Generate Draft Order' button on PriceSummary component"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": "Part of M5 - Draft Order Creation"
+      "passes": true,
+      "notes": "M5 Complete - /api/shopify/draft-orders route"
     },
     {
       "id": "US-007",
@@ -113,8 +113,8 @@
         "Option to start new estimation"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": "Part of M5 - Draft Order Creation"
+      "passes": true,
+      "notes": "M5 Complete - OrderSuccess component"
     },
     {
       "id": "US-008",
@@ -130,8 +130,8 @@
         "Editable message before copying"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": "Part of M5/M6"
+      "passes": true,
+      "notes": "M5/M6 Complete - generateCustomerMessage in message-template.ts"
     },
     {
       "id": "US-009",
@@ -145,8 +145,8 @@
         "Estimations saved to Supabase after draft order creation"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": "M6 - History & Polish"
+      "passes": true,
+      "notes": "M6 Complete - /estimations page with pagination"
     },
     {
       "id": "US-010",
@@ -160,8 +160,8 @@
         "Option to duplicate/reopen estimation"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": "M6 - History & Polish"
+      "passes": true,
+      "notes": "M6 Complete - /estimations/[id] detail page"
     },
     {
       "id": "US-011",
@@ -175,8 +175,8 @@
         "Graceful handling of network errors"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": "M6 - History & Polish"
+      "passes": true,
+      "notes": "M6 Complete - Spinners, skeletons, retry buttons throughout"
     },
     {
       "id": "US-012",
@@ -190,8 +190,8 @@
         "No horizontal scroll on any screen size"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": "M6 - History & Polish"
+      "passes": true,
+      "notes": "M6 Complete - Mobile-first Tailwind throughout"
     }
   ]
 }
