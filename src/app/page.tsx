@@ -11,8 +11,9 @@
  */
 
 import { useState, useEffect } from 'react'
-import { ImageUpload, ItemCard, ServiceSelector, PriceSummary, CustomerForm, OrderSuccess } from '@/components/estimation'
+import { ImageUpload, ServiceSelector, PriceSummary, CustomerForm, OrderSuccess } from '@/components/estimation'
 import type { CustomerInfo } from '@/components/estimation'
+import { AnnotatedImageViewer } from '@/components/ui/annotated-image-viewer'
 import { uploadImages } from '@/lib/supabase/storage'
 import { calculatePrices } from '@/lib/pricing'
 import { filterServicesForItem } from '@/lib/shopify'
@@ -153,103 +154,7 @@ export default function Home() {
     setUploadError(null)
   }
 
-  // Analyze a single image (may detect multiple items)
-  const analyzeImage = async (imageId: string, imageUrl: string) => {
-    // Set analyzing state for this image
-    setUploadedImages((prev) =>
-      prev.map((img) =>
-        img.id === imageId
-          ? { ...img, isAnalyzing: true, analysisError: null }
-          : img
-      )
-    )
-
-    try {
-      const response = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Analysis failed')
-      }
-
-      // Check if multiple items were detected
-      const items: AIAnalysisResult[] = data.items || [data.analysis]
-      const totalItems = data.total_items || 1
-
-      if (totalItems > 1) {
-        // Multiple items detected - split into separate entries with auto-selected services
-        setUploadedImages((prev) => {
-          const imageIndex = prev.findIndex((img) => img.id === imageId)
-          if (imageIndex === -1) return prev
-
-          const originalImage = prev[imageIndex]
-          const newImages: UploadedImage[] = items.map((item, idx) => ({
-            id: `${imageId}-item-${idx + 1}`,
-            url: originalImage.url,
-            path: originalImage.path,
-            analysis: item,
-            isAnalyzing: false,
-            analysisError: null,
-            // Auto-select AI suggested services
-            selectedServices: findMatchingServices(
-              item.suggested_services,
-              item.category,
-              item.sub_type
-            ),
-          }))
-
-          // Replace original with split items
-          return [
-            ...prev.slice(0, imageIndex),
-            ...newImages,
-            ...prev.slice(imageIndex + 1),
-          ]
-        })
-      } else {
-        // Single item - update with auto-selected services
-        const analysis = items[0]
-        const autoSelectedServices = findMatchingServices(
-          analysis.suggested_services,
-          analysis.category,
-          analysis.sub_type
-        )
-
-        setUploadedImages((prev) =>
-          prev.map((img) =>
-            img.id === imageId
-              ? {
-                  ...img,
-                  analysis,
-                  isAnalyzing: false,
-                  selectedServices: autoSelectedServices,
-                }
-              : img
-          )
-        )
-      }
-    } catch (error) {
-      console.error('Analysis error:', error)
-      setUploadedImages((prev) =>
-        prev.map((img) =>
-          img.id === imageId
-            ? {
-                ...img,
-                isAnalyzing: false,
-                analysisError:
-                  error instanceof Error ? error.message : 'Analysis failed',
-              }
-            : img
-        )
-      )
-    }
-  }
-
-  // Handle upload to Supabase and trigger analysis
+  // Handle upload to Supabase
   const handleUpload = async () => {
     if (localImages.length === 0) return
 
@@ -310,31 +215,106 @@ export default function Home() {
     }
   }
 
-  // Analyze all uploaded images
-  const handleAnalyzeAll = () => {
-    uploadedImages.forEach((image) => {
-      if (!image.analysis && !image.isAnalyzing) {
-        analyzeImage(image.id, image.url)
-      }
-    })
-  }
+  // Analyze all uploaded images together as ONE item (multiple angles)
+  const handleAnalyzeAll = async () => {
+    // Get all unanalyzed image URLs
+    const imagesToAnalyze = uploadedImages.filter(
+      (img) => !img.analysis && !img.isAnalyzing
+    )
 
-  // Retry analysis for a single image
-  const handleRetryAnalysis = (imageId: string) => {
-    const image = uploadedImages.find((img) => img.id === imageId)
-    if (image) {
-      analyzeImage(image.id, image.url)
+    if (imagesToAnalyze.length === 0) return
+
+    // Set all as analyzing
+    setUploadedImages((prev) =>
+      prev.map((img) =>
+        imagesToAnalyze.some((i) => i.id === img.id)
+          ? { ...img, isAnalyzing: true, analysisError: null }
+          : img
+      )
+    )
+
+    try {
+      // Send ALL image URLs to analyze together (same item, different angles)
+      const imageUrls = imagesToAnalyze.map((img) => img.url)
+
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrls }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || 'Analysis failed')
+      }
+
+      // Get the combined analysis result
+      const analysis: AIAnalysisResult = data.analysis
+
+      // Find matching services for the AI suggestions
+      const autoSelectedServices = findMatchingServices(
+        analysis.suggested_services,
+        analysis.category,
+        analysis.sub_type
+      )
+
+      // Store the SAME analysis on ALL images (they're the same item)
+      // Only the FIRST image will have service selection, others link to it
+      setUploadedImages((prev) =>
+        prev.map((img, idx) => {
+          const isFirst = idx === 0
+          if (imagesToAnalyze.some((i) => i.id === img.id)) {
+            return {
+              ...img,
+              analysis,
+              isAnalyzing: false,
+              selectedServices: isFirst ? autoSelectedServices : [],
+            }
+          }
+          return img
+        })
+      )
+    } catch (error) {
+      console.error('Analysis error:', error)
+      setUploadedImages((prev) =>
+        prev.map((img) =>
+          imagesToAnalyze.some((i) => i.id === img.id)
+            ? {
+                ...img,
+                isAnalyzing: false,
+                analysisError:
+                  error instanceof Error ? error.message : 'Analysis failed',
+              }
+            : img
+        )
+      )
     }
   }
 
-  // Update selected services for an item
+  // Retry analysis - re-analyze all images together
+  const handleRetryAnalysis = () => {
+    // Clear all analysis and retry
+    setUploadedImages((prev) =>
+      prev.map((img) => ({
+        ...img,
+        analysis: null,
+        analysisError: null,
+        selectedServices: [],
+      }))
+    )
+    // Will trigger analyze when user clicks "Analyze" button again
+  }
+
+  // Update selected services for the item (applies to all images since they're same item)
   const handleServiceSelectionChange = (
-    imageId: string,
+    _imageId: string,
     selectedServices: SelectedService[]
   ) => {
+    // Update services on the FIRST image (primary), others are linked
     setUploadedImages((prev) =>
-      prev.map((img) =>
-        img.id === imageId ? { ...img, selectedServices } : img
+      prev.map((img, idx) =>
+        idx === 0 ? { ...img, selectedServices } : img
       )
     )
   }
@@ -373,22 +353,12 @@ export default function Home() {
       }))
   }
 
-  // Calculate total price across all items
+  // Calculate total price for the item (using first image's analysis and services)
   const calculateTotalPrices = () => {
-    // Combine all selected services from all items
-    const allSelectedServices = uploadedImages.flatMap((img) => {
-      if (!img.analysis || img.selectedServices.length === 0) return []
+    // Use the first image (primary) which has the shared analysis and services
+    const primaryImage = uploadedImages[0]
 
-      // Calculate with modifiers based on item's material/condition
-      return calculatePrices(
-        img.selectedServices,
-        img.analysis.material,
-        img.analysis.condition
-      )
-    })
-
-    // If no items have services selected, return empty result
-    if (allSelectedServices.length === 0) {
+    if (!primaryImage?.analysis || primaryImage.selectedServices.length === 0) {
       return {
         lineItems: [],
         subtotal: 0,
@@ -398,19 +368,12 @@ export default function Home() {
       }
     }
 
-    // Aggregate all calculations
-    const allLineItems = allSelectedServices.flatMap((calc) => calc.lineItems)
-    const totalSubtotal = allSelectedServices.reduce((sum, calc) => sum + calc.subtotal, 0)
-    const totalModifiers = allSelectedServices.reduce((sum, calc) => sum + calc.modifiersTotal, 0)
-    const totalGrand = allSelectedServices.reduce((sum, calc) => sum + calc.grandTotal, 0)
-
-    return {
-      lineItems: allLineItems,
-      subtotal: totalSubtotal,
-      modifiersTotal: totalModifiers,
-      grandTotal: totalGrand,
-      currency: 'AED',
-    }
+    // Calculate with modifiers based on item's material/condition
+    return calculatePrices(
+      primaryImage.selectedServices,
+      primaryImage.analysis.material,
+      primaryImage.analysis.condition
+    )
   }
 
   const hasLocalImages = localImages.length > 0
@@ -419,12 +382,12 @@ export default function Home() {
     (img) => !img.analysis && !img.isAnalyzing && !img.analysisError
   )
   const isAnyAnalyzing = uploadedImages.some((img) => img.isAnalyzing)
-  const allAnalyzed = uploadedImages.length > 0 && uploadedImages.every(
-    (img) => img.analysis !== null
-  )
-  const hasAnyServicesSelected = uploadedImages.some(
-    (img) => img.selectedServices.length > 0
-  )
+  // All images share the same analysis - check first one
+  const allAnalyzed = uploadedImages.length > 0 && uploadedImages[0]?.analysis !== null
+  // Services are stored on first image only
+  const hasAnyServicesSelected = uploadedImages[0]?.selectedServices.length > 0
+  // Get the shared analysis (from first image)
+  const sharedAnalysis = uploadedImages[0]?.analysis
 
   const priceCalculation = calculateTotalPrices()
 
@@ -599,43 +562,140 @@ export default function Home() {
                     }
                   `}
                 >
-                  {isAnyAnalyzing ? 'Analyzing...' : 'Analyze All'}
+                  {isAnyAnalyzing ? 'Analyzing...' : `Analyze ${uploadedImages.length} Image${uploadedImages.length !== 1 ? 's' : ''}`}
                 </button>
               )}
 
               {/* All analyzed indicator */}
               {allAnalyzed && (
                 <span className="text-sm text-green-600 font-medium">
-                  All items analyzed
+                  ✓ Item analyzed
                 </span>
               )}
             </div>
 
-            {/* Item Cards */}
-            <div className="space-y-4">
-              {uploadedImages.map((image) => (
-                <ItemCard
-                  key={image.id}
-                  imageUrl={image.url}
-                  analysis={image.analysis}
-                  isAnalyzing={image.isAnalyzing}
-                  error={image.analysisError}
-                  onRetry={() => handleRetryAnalysis(image.id)}
+            {/* Image thumbnails gallery with annotations */}
+            {sharedAnalysis ? (
+              <div className="mb-4">
+                <AnnotatedImageViewer
+                  images={uploadedImages.map((img) => ({ id: img.id, url: img.url }))}
+                  issues={sharedAnalysis.issues || []}
                 />
-              ))}
-            </div>
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  Tap an image to view full-screen with issue annotations
+                </p>
+              </div>
+            ) : (
+              <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+                {uploadedImages.map((image, idx) => (
+                  <div
+                    key={image.id}
+                    className="relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden bg-gray-100 border-2 border-gray-200"
+                  >
+                    <img
+                      src={image.url}
+                      alt={`Angle ${idx + 1}`}
+                      className="w-full h-full object-cover"
+                    />
+                    {image.isAnalyzing && (
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    )}
+                    <span className="absolute bottom-1 right-1 bg-black/60 text-white text-xs px-1 rounded">
+                      {idx + 1}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Analysis result */}
+            {sharedAnalysis && (
+              <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                {/* Category & Material */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-semibold text-gray-900">
+                    {formatCategory(sharedAnalysis.category, sharedAnalysis.sub_type)}
+                  </span>
+                  <span className="text-gray-500">•</span>
+                  <span className="text-gray-600">
+                    {formatMaterial(sharedAnalysis.material)}
+                  </span>
+                  {sharedAnalysis.brand && (
+                    <>
+                      <span className="text-gray-500">•</span>
+                      <span className="text-gray-600">{sharedAnalysis.brand}</span>
+                    </>
+                  )}
+                </div>
+
+                {/* Condition */}
+                <div>
+                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium capitalize ${
+                    sharedAnalysis.condition === 'excellent' ? 'bg-green-100 text-green-800' :
+                    sharedAnalysis.condition === 'good' ? 'bg-blue-100 text-blue-800' :
+                    sharedAnalysis.condition === 'fair' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-red-100 text-red-800'
+                  }`}>
+                    {sharedAnalysis.condition} condition
+                  </span>
+                </div>
+
+                {/* Issues */}
+                {sharedAnalysis.issues.length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Detected Issues ({sharedAnalysis.issues.length})
+                    </p>
+                    <div className="space-y-1">
+                      {sharedAnalysis.issues.map((issue, i) => (
+                        <div key={i} className="text-sm flex items-center gap-2">
+                          <span className="font-medium text-gray-800 capitalize">
+                            {issue.type.replace(/_/g, ' ')}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded text-xs ${
+                            issue.severity === 'minor' ? 'bg-yellow-100 text-yellow-800' :
+                            issue.severity === 'moderate' ? 'bg-orange-100 text-orange-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {issue.severity}
+                          </span>
+                          <span className="text-gray-500 text-xs">
+                            ({issue.location.replace(/_/g, ' ')})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Error state */}
+            {uploadedImages[0]?.analysisError && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-red-700 text-sm">{uploadedImages[0].analysisError}</p>
+                <button
+                  onClick={handleRetryAnalysis}
+                  className="mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  Retry Analysis
+                </button>
+              </div>
+            )}
 
             {/* Analysis tips */}
             {hasUnanalyzedImages && !isAnyAnalyzing && (
               <p className="mt-4 text-sm text-gray-500 text-center">
-                Click &quot;Analyze All&quot; to get AI-powered service recommendations
+                Click &quot;Analyze&quot; to get AI-powered service recommendations for this item
               </p>
             )}
           </section>
         )}
 
         {/* Step 3: Service Selection */}
-        {allAnalyzed && (
+        {allAnalyzed && sharedAnalysis && (
           <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <h2 className="text-lg font-medium text-gray-900 mb-4">
               Step 3: Select Services
@@ -656,50 +716,18 @@ export default function Home() {
               </div>
             )}
 
-            {/* Service selectors for each item */}
+            {/* Single service selector for the item */}
             {!servicesLoading && !servicesError && (
-              <div className="space-y-6">
-                {uploadedImages.map((image, index) => {
-                  const brand = image.analysis?.brand
-                  const showBrand = brand && brand.toLowerCase() !== 'unknown' && brand.toLowerCase() !== 'unknown brand'
-
-                  return (
-                  <div key={image.id} className="border-b border-gray-200 pb-6 last:border-0 last:pb-0">
-                    {/* Item header with brand */}
-                    <div className="flex items-center gap-3 mb-4">
-                      <img
-                        src={image.url}
-                        alt={`Item ${index + 1}`}
-                        className="w-12 h-12 rounded-lg object-cover"
-                      />
-                      <div>
-                        <h3 className="font-medium text-gray-900">
-                          Item {index + 1}: {showBrand ? `${brand} ` : ''}
-                          {formatCategory(image.analysis?.category, image.analysis?.sub_type)}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          {formatMaterial(image.analysis?.material)}
-                          {image.analysis?.color && ` • ${image.analysis.color}`}
-                          {image.analysis?.condition && ` • ${image.analysis.condition} condition`}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Service selector */}
-                    <ServiceSelector
-                      services={shopifyServices}
-                      suggestedServiceNames={image.analysis?.suggested_services || []}
-                      selectedServices={image.selectedServices}
-                      onSelectionChange={(selected) =>
-                        handleServiceSelectionChange(image.id, selected)
-                      }
-                      itemCategory={image.analysis?.category}
-                      itemSubType={image.analysis?.sub_type}
-                    />
-                  </div>
-                  )
-                })}
-              </div>
+              <ServiceSelector
+                services={shopifyServices}
+                suggestedServiceNames={sharedAnalysis.suggested_services || []}
+                selectedServices={uploadedImages[0]?.selectedServices || []}
+                onSelectionChange={(selected) =>
+                  handleServiceSelectionChange(uploadedImages[0]?.id || '', selected)
+                }
+                itemCategory={sharedAnalysis.category}
+                itemSubType={sharedAnalysis.sub_type}
+              />
             )}
           </section>
         )}
