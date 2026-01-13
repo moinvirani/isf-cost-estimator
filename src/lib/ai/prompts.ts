@@ -92,32 +92,51 @@ Respond with ONLY valid JSON in this exact structure:
   "notes": "<any additional observations>"
 }
 
-BOUNDING BOX INSTRUCTIONS (CRITICAL - follow carefully):
-- ALL coordinates are NORMALIZED fractions from 0.0 to 1.0 (NOT pixels!)
-- x=0.0 is LEFT edge of image, x=1.0 is RIGHT edge
-- y=0.0 is TOP edge of image, y=1.0 is BOTTOM edge
-- width and height are also fractions (e.g., 0.2 = 20% of image)
-- imageIndex: which image (0-indexed) shows this issue most clearly
+BOUNDING BOX INSTRUCTIONS - USE GRID POSITION:
+Think of the image as a 3x3 grid. Identify which cell contains the issue:
 
-EXAMPLE: For a scuff on the toe box in the lower-left area of image 0:
+  TOP-LEFT    |  TOP-CENTER   |  TOP-RIGHT
+  (0.17, 0.17)| (0.5, 0.17)   | (0.83, 0.17)
+  ------------+--------------+-------------
+  MID-LEFT    |    CENTER     |  MID-RIGHT
+  (0.17, 0.5) |  (0.5, 0.5)   | (0.83, 0.5)
+  ------------+--------------+-------------
+  BOT-LEFT    |  BOT-CENTER   |  BOT-RIGHT
+  (0.17, 0.83)| (0.5, 0.83)   | (0.83, 0.83)
+
+For bbox coordinates:
+1. Find which grid cell the issue is in
+2. Use the center coordinates from the table above as x and y
+3. Use width=0.3 and height=0.3 (covers the grid cell)
+4. imageIndex = which image shows this issue (0-indexed)
+
+EXAMPLE - Scuff on toe box (usually center of shoe photo):
 {
   "bbox": {
-    "x": 0.1,      // 10% from left edge
-    "y": 0.6,      // 60% from top (lower area)
-    "width": 0.25, // covers 25% of image width
-    "height": 0.2, // covers 20% of image height
+    "x": 0.5,       // CENTER column
+    "y": 0.5,       // MIDDLE row
+    "width": 0.3,
+    "height": 0.3,
     "imageIndex": 0
   }
 }
 
-GUIDELINES for accurate bbox:
-- If issue is in LEFT third of image: x should be 0.0-0.33
-- If issue is in CENTER: x should be 0.33-0.66
-- If issue is in RIGHT third: x should be 0.66-1.0
-- If issue is in TOP third: y should be 0.0-0.33
-- If issue is in MIDDLE: y should be 0.33-0.66
-- If issue is in BOTTOM third: y should be 0.66-1.0
-- Make width/height large enough to encompass the entire issue area (typically 0.15-0.35)
+EXAMPLE - Heel damage (usually bottom of shoe photo):
+{
+  "bbox": {
+    "x": 0.5,       // CENTER column
+    "y": 0.83,      // BOTTOM row
+    "width": 0.3,
+    "height": 0.3,
+    "imageIndex": 0
+  }
+}
+
+IMPORTANT: Focus on WHERE ON THE ITEM the issue is, not where the item is in the frame. Most shoe photos have the shoe centered, so:
+- Toe area → use CENTER or slightly above center (y=0.4-0.5)
+- Heel area → use lower portion (y=0.6-0.8)
+- Sole → use bottom (y=0.8-0.9)
+- Upper/top → use upper portion (y=0.2-0.4)
 
 AVAILABLE SERVICES - Use EXACT names from this list for suggested_services:
 ${serviceList}
