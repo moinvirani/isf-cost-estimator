@@ -1,17 +1,57 @@
 'use client'
 
 /**
- * AI Training Page
+ * AI Training Page (Shopify-First)
  *
- * Staff can review Zoko images and select the correct services.
- * Uses AI to group images by item type (shoe vs bag, etc.).
- * Prioritizes customers with Shopify orders.
- * Semi-automatic: Shows Shopify orders to pre-fill services.
+ * Shows ONLY Zoko conversations that have verified matching Shopify orders.
+ * This ensures training data is reliable - we know what services were actually purchased.
+ *
+ * Flow:
+ * 1. Fetch recent Shopify orders (90 days)
+ * 2. Match to Zoko customers by phone + name
+ * 3. Find images sent before each order
+ * 4. Staff verifies and saves training examples
  */
 
-import { useState, useEffect, useCallback } from 'react'
-import type { ZokoConversationForTraining, ZokoImage, MatchingOrder, TrainingExample } from '@/types/training'
+import { useState, useEffect } from 'react'
 import type { ShopifyService } from '@/types/service'
+import type { TrainingExample } from '@/types/training'
+
+// Types for matched conversation data
+interface MatchedImage {
+  url: string
+  caption?: string
+  messageId: string
+  timestamp: string
+}
+
+interface MatchedConversation {
+  order: {
+    id: string
+    name: string
+    createdAt: string
+    totalPrice: string
+    currency: string
+    services: Array<{
+      title: string
+      quantity: number
+      price: string
+    }>
+  }
+  customer: {
+    id: string
+    name: string
+    phone: string
+  }
+  matchConfidence: 'high' | 'medium' | 'low'
+  nameScore: number
+  images: MatchedImage[]
+  contextMessages: Array<{
+    direction: 'FROM_CUSTOMER' | 'FROM_STORE'
+    text: string
+    timestamp: string
+  }>
+}
 
 interface SelectedService {
   service: ShopifyService
@@ -43,35 +83,35 @@ function Toast({ message, type, onClose }: { message: string; type: 'success' | 
   )
 }
 
-// Get images from conversation (handles both new and legacy format)
-function getImages(conversation: ZokoConversationForTraining): ZokoImage[] {
-  if (conversation.images && conversation.images.length > 0) {
-    return conversation.images
+// Match confidence badge
+function ConfidenceBadge({ confidence, nameScore }: { confidence: 'high' | 'medium' | 'low'; nameScore: number }) {
+  const colors = {
+    high: 'bg-green-100 text-green-700 border-green-200',
+    medium: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    low: 'bg-orange-100 text-orange-700 border-orange-200',
   }
-  // Legacy format fallback
-  if (conversation.imageUrl) {
-    return [{
-      url: conversation.imageUrl,
-      caption: conversation.imageCaption,
-      messageId: conversation.messageId || '',
-      timestamp: conversation.timestamp,
-    }]
-  }
-  return []
+
+  return (
+    <span className={`px-2 py-1 text-xs font-medium rounded-full border ${colors[confidence]}`}>
+      {confidence} ({nameScore}%)
+    </span>
+  )
 }
 
 export default function TrainingPage() {
-  // Zoko conversations
-  const [conversations, setConversations] = useState<ZokoConversationForTraining[]>([])
+  // Matched conversations (Shopify order + Zoko images)
+  const [conversations, setConversations] = useState<MatchedConversation[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState<{ ordersFound: number; matchesFound: number; indexSize: number } | null>(null)
 
-  // Shopify services (full list)
+  // Shopify services (full list for manual selection)
   const [services, setServices] = useState<ShopifyService[]>([])
   const [servicesLoading, setServicesLoading] = useState(true)
+  const [servicesError, setServicesError] = useState<string | null>(null)
 
-  // Selected services for current image
+  // Selected services for current item
   const [selectedServices, setSelectedServices] = useState<SelectedService[]>([])
 
   // Staff info
@@ -96,53 +136,24 @@ export default function TrainingPage() {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
 
   const currentConversation = conversations[currentIndex]
-  const currentImages = currentConversation ? getImages(currentConversation) : []
+  const currentImages = currentConversation?.images || []
   const currentImage = currentImages[selectedImageIndex] || currentImages[0]
-  // Matching orders - loaded on demand
-  const [matchingOrders, setMatchingOrders] = useState<MatchingOrder[]>([])
-  const [ordersLoading, setOrdersLoading] = useState(false)
-  const [ordersLoaded, setOrdersLoaded] = useState(false)
 
-  // Load orders for current customer on demand
-  const loadOrders = useCallback(async () => {
-    if (!currentConversation?.customerPhone || ordersLoading) return
-    setOrdersLoading(true)
-    try {
-      const res = await fetch(
-        `/api/training/orders?phone=${encodeURIComponent(currentConversation.customerPhone)}&afterDate=${encodeURIComponent(currentConversation.timestamp)}`
-      )
-      const data = await res.json()
-      if (data.success && data.orders) {
-        setMatchingOrders(data.orders.map((order: { id: string; orderNumber: string; createdAt: string; totalAmount: string; currency: string; services: Array<{ title: string; quantity: number; price: string }> }) => ({
-          id: order.id,
-          name: order.orderNumber,
-          createdAt: order.createdAt,
-          totalPrice: `${order.totalAmount} ${order.currency}`,
-          lineItems: order.services,
-        })))
-      }
-    } catch (err) {
-      console.error('Failed to load orders:', err)
-    } finally {
-      setOrdersLoading(false)
-      setOrdersLoaded(true)
-    }
-  }, [currentConversation?.customerPhone, currentConversation?.timestamp, ordersLoading])
-
-  // Reset orders when changing customer
+  // Fetch matched conversations and services on mount
   useEffect(() => {
-    setMatchingOrders([])
-    setOrdersLoaded(false)
-  }, [currentIndex])
-
-  // Fetch Zoko images and Shopify services on mount
-  useEffect(() => {
-    fetchZokoImages()
+    fetchMatchedConversations()
     fetchServices()
-    fetchSavedCount() // Check how many examples already saved
+    fetchSavedCount()
   }, [])
 
-  // Fetch count of saved examples on mount
+  // Auto-apply order services when conversation changes
+  useEffect(() => {
+    if (currentConversation) {
+      applyOrderServices()
+      setSelectedImageIndex(0)
+    }
+  }, [currentIndex, currentConversation])
+
   const fetchSavedCount = async () => {
     try {
       const res = await fetch('/api/training/examples?limit=1000')
@@ -155,7 +166,6 @@ export default function TrainingPage() {
     }
   }
 
-  // Fetch saved examples for viewing
   const fetchSavedExamples = async () => {
     setLoadingSavedExamples(true)
     try {
@@ -171,23 +181,21 @@ export default function TrainingPage() {
     }
   }
 
-  const fetchZokoImages = async (page = 200) => {
+  const fetchMatchedConversations = async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/training/zoko-images?page=${page}&limit=20`)
+      const res = await fetch('/api/training/matched-conversations?daysBack=90&limit=50')
       const data = await res.json()
       if (!data.success) throw new Error(data.error)
       setConversations(data.conversations || [])
+      setStats(data.stats || null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load images')
+      setError(err instanceof Error ? err.message : 'Failed to load matched conversations')
     } finally {
       setLoading(false)
     }
   }
-
-  // Track services loading error
-  const [servicesError, setServicesError] = useState<string | null>(null)
 
   const fetchServices = async () => {
     setServicesLoading(true)
@@ -195,25 +203,39 @@ export default function TrainingPage() {
     try {
       const res = await fetch('/api/services')
       const data = await res.json()
-      console.log('[Training] Services API response:', data)
       if (data.success) {
         setServices(data.services || [])
-        console.log('[Training] Loaded', data.services?.length || 0, 'services')
       } else {
         setServicesError(data.error || 'Failed to load services')
-        console.error('[Training] Services API error:', data.error)
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : 'Network error loading services'
-      setServicesError(errorMsg)
-      console.error('[Training] Failed to load services:', err)
+      setServicesError(err instanceof Error ? err.message : 'Network error loading services')
     } finally {
       setServicesLoading(false)
     }
   }
 
+  // Apply services from the matched Shopify order (auto pre-fill)
+  const applyOrderServices = () => {
+    if (!currentConversation || services.length === 0) return
+
+    const newSelected: SelectedService[] = []
+    for (const lineItem of currentConversation.order.services) {
+      // Find matching service in our services list (match by title)
+      const matchedService = services.find(
+        s => s.title.toLowerCase() === lineItem.title.toLowerCase()
+      )
+      if (matchedService) {
+        newSelected.push({
+          service: matchedService,
+          quantity: lineItem.quantity,
+        })
+      }
+    }
+    setSelectedServices(newSelected)
+  }
+
   const toggleService = (service: ShopifyService) => {
-    // Use variant_id as unique identifier (id is product id, same for all variants)
     const exists = selectedServices.find(s => s.service.variant_id === service.variant_id)
     if (exists) {
       setSelectedServices(selectedServices.filter(s => s.service.variant_id !== service.variant_id))
@@ -231,24 +253,6 @@ export default function TrainingPage() {
     )
   }
 
-  // Apply services from a Shopify order (semi-automatic training)
-  const applyOrderServices = (order: MatchingOrder) => {
-    const newSelected: SelectedService[] = []
-    for (const lineItem of order.lineItems) {
-      // Find matching service in our services list (match by title)
-      const matchedService = services.find(
-        s => s.title.toLowerCase() === lineItem.title.toLowerCase()
-      )
-      if (matchedService) {
-        newSelected.push({
-          service: matchedService,
-          quantity: lineItem.quantity,
-        })
-      }
-    }
-    setSelectedServices(newSelected)
-  }
-
   const saveAndNext = async () => {
     if (!currentConversation || selectedServices.length === 0) return
     if (!staffName.trim()) {
@@ -262,11 +266,13 @@ export default function TrainingPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          image_url: currentConversation.imageUrl,
+          image_url: currentImage?.url || currentImages[0]?.url,
           image_source: 'zoko',
-          zoko_customer_id: currentConversation.customerId,
-          zoko_message_id: currentConversation.messageId,
-          zoko_customer_name: currentConversation.customerName,
+          zoko_customer_id: currentConversation.customer.id,
+          zoko_message_id: currentImage?.messageId || currentImages[0]?.messageId,
+          zoko_customer_name: currentConversation.customer.name,
+          shopify_order_id: currentConversation.order.id,
+          shopify_order_name: currentConversation.order.name,
           correct_services: selectedServices.map(s => ({
             service_name: s.service.title,
             shopify_product_id: s.service.id,
@@ -280,10 +286,9 @@ export default function TrainingPage() {
 
       setSavedCount(prev => prev + 1)
       setSelectedServices([])
-      setSelectedImageIndex(0) // Reset gallery
+      setSelectedImageIndex(0)
       setCurrentIndex(prev => prev + 1)
 
-      // Show success toast with details
       const serviceNames = selectedServices.map(s => s.service.title).join(', ')
       setToast({
         message: `Saved! Services: ${serviceNames.slice(0, 50)}${serviceNames.length > 50 ? '...' : ''}`,
@@ -299,30 +304,30 @@ export default function TrainingPage() {
     }
   }
 
-  const skipImage = () => {
+  const skipConversation = () => {
     setSelectedServices([])
-    setSelectedImageIndex(0) // Reset gallery
+    setSelectedImageIndex(0)
     setCurrentIndex(prev => prev + 1)
   }
 
-  // Check if we've gone through all images
+  // Check if we've gone through all conversations
   if (!loading && currentIndex >= conversations.length) {
     return (
       <main className="min-h-screen bg-gray-50 p-4">
         <div className="max-w-2xl mx-auto text-center py-20">
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Training Complete!</h1>
-          <p className="text-gray-600 mb-4">You&apos;ve reviewed all images in this batch.</p>
+          <p className="text-gray-600 mb-4">You&apos;ve reviewed all matched conversations.</p>
           <p className="text-lg font-semibold text-green-600 mb-8">
             {savedCount} examples saved
           </p>
           <button
             onClick={() => {
               setCurrentIndex(0)
-              fetchZokoImages(250) // Load next batch
+              fetchMatchedConversations()
             }}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
           >
-            Load More Images
+            Refresh Matches
           </button>
         </div>
       </main>
@@ -346,7 +351,7 @@ export default function TrainingPage() {
           <div>
             <h1 className="text-xl font-semibold text-gray-900">AI Training</h1>
             <p className="text-sm text-gray-500">
-              Select the correct services for each item
+              Verified matches: images with confirmed orders
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -361,16 +366,13 @@ export default function TrainingPage() {
             </button>
             <div className="text-right">
               <p className="text-sm text-gray-500">
-                Item {currentIndex + 1} of {conversations.length}
-                {currentImages.length > 1 && (
-                  <span className="ml-1 text-blue-600">
-                    ({currentImages.length} photos)
-                  </span>
-                )}
+                Match {currentIndex + 1} of {conversations.length}
               </p>
-              <p className="text-sm font-medium text-green-600">
-                {savedCount} saved to database
-              </p>
+              {stats && (
+                <p className="text-xs text-gray-400">
+                  {stats.matchesFound} matches from {stats.ordersFound} orders
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -457,7 +459,8 @@ export default function TrainingPage() {
         {loading && (
           <div className="text-center py-20">
             <div className="inline-block h-8 w-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <p className="text-gray-500 mt-4">Loading images from Zoko...</p>
+            <p className="text-gray-500 mt-4">Building Zoko phone index & matching orders...</p>
+            <p className="text-gray-400 text-sm mt-2">This may take a minute on first load</p>
           </div>
         )}
 
@@ -465,38 +468,60 @@ export default function TrainingPage() {
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700">
             {error}
+            <button
+              onClick={fetchMatchedConversations}
+              className="ml-4 px-3 py-1 bg-red-100 rounded text-sm font-medium hover:bg-red-200"
+            >
+              Retry
+            </button>
           </div>
         )}
 
         {/* Main Content */}
         {!loading && !error && currentConversation && (
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Left: Image + Context */}
+            {/* Left: Image + Order Info */}
             <div className="space-y-4">
+              {/* Customer & Order Info */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <p className="font-medium text-gray-900">{currentConversation.customer.name}</p>
+                    <p className="text-xs text-gray-500">{currentConversation.customer.phone}</p>
+                  </div>
+                  <ConfidenceBadge
+                    confidence={currentConversation.matchConfidence}
+                    nameScore={currentConversation.nameScore}
+                  />
+                </div>
+
+                {/* Matched Order */}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-medium text-green-800">{currentConversation.order.name}</span>
+                    <span className="text-sm text-green-700">
+                      {currentConversation.order.totalPrice} {currentConversation.order.currency}
+                    </span>
+                  </div>
+                  <p className="text-xs text-green-600 mb-2">
+                    Ordered: {new Date(currentConversation.order.createdAt).toLocaleDateString()}
+                  </p>
+                  <div className="text-sm text-green-700">
+                    {currentConversation.order.services.map((svc, i) => (
+                      <span key={i}>
+                        {svc.quantity > 1 ? `${svc.quantity}x ` : ''}{svc.title}
+                        {i < currentConversation.order.services.length - 1 ? ', ' : ''}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
               {/* Customer Image Gallery */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <p className="text-sm text-gray-500">
-                      From: {currentConversation.customerName}
-                    </p>
-                    {currentConversation.customerPhone && (
-                      <p className="text-xs text-gray-400">
-                        Phone: {currentConversation.customerPhone}
-                      </p>
-                    )}
-                    {currentConversation.timestamp && (
-                      <p className="text-xs text-gray-400">
-                        Sent: {new Date(currentConversation.timestamp).toLocaleDateString()}
-                      </p>
-                    )}
-                  </div>
-                  {currentConversation.hasOrders && (
-                    <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-                      Has Orders
-                    </span>
-                  )}
-                </div>
+                <p className="text-xs text-gray-500 mb-2">
+                  Images sent before order ({currentImages.length} photos)
+                </p>
 
                 {/* Main Image */}
                 {currentImage && (
@@ -530,10 +555,10 @@ export default function TrainingPage() {
                   </div>
                 )}
 
-                {/* Image count indicator */}
-                {currentImages.length > 1 && (
-                  <p className="text-xs text-gray-400 mt-2 text-center">
-                    Photo {selectedImageIndex + 1} of {currentImages.length} - Click thumbnails to view different angles
+                {/* Image timestamp */}
+                {currentImage && (
+                  <p className="text-xs text-gray-400 mt-2">
+                    Sent: {new Date(currentImage.timestamp).toLocaleString()}
                   </p>
                 )}
 
@@ -551,7 +576,7 @@ export default function TrainingPage() {
                   <h3 className="text-sm font-medium text-gray-700 mb-3">
                     Conversation Context
                   </h3>
-                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                  <div className="space-y-2 max-h-40 overflow-y-auto">
                     {currentConversation.contextMessages.map((msg, i) => (
                       <div
                         key={i}
@@ -571,69 +596,16 @@ export default function TrainingPage() {
                   </div>
                 </div>
               )}
-
-              {/* Matching Shopify Orders - Semi-automatic training */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
-                <h3 className="text-sm font-medium text-gray-700 mb-3">
-                  Matching Orders
-                  <span className="ml-2 text-xs text-gray-400">
-                    (within 7 days of images)
-                  </span>
-                </h3>
-                {!ordersLoaded ? (
-                  <button
-                    onClick={loadOrders}
-                    disabled={ordersLoading}
-                    className="w-full py-2 px-3 bg-blue-50 text-blue-700 rounded-lg text-sm font-medium hover:bg-blue-100 border border-blue-200 disabled:opacity-50"
-                  >
-                    {ordersLoading ? 'Loading...' : 'Load Shopify Orders'}
-                  </button>
-                ) : matchingOrders.length === 0 ? (
-                  <p className="text-sm text-gray-500">No orders found within 7 days of these images</p>
-                ) : (
-                  <div className="space-y-3">
-                    {matchingOrders.map((order) => (
-                      <div
-                        key={order.id}
-                        className="border border-gray-200 rounded-lg p-3"
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <span className="font-medium text-gray-900">{order.name}</span>
-                            <span className="ml-2 text-xs text-gray-500">
-                              {new Date(order.createdAt).toLocaleDateString()}
-                            </span>
-                          </div>
-                          <span className="text-sm font-medium text-gray-900">
-                            {order.totalPrice}
-                          </span>
-                        </div>
-                        <div className="text-sm text-gray-600 mb-2">
-                          {order.lineItems.map((item, i) => (
-                            <span key={i}>
-                              {item.quantity > 1 ? `${item.quantity}x ` : ''}{item.title}
-                              {i < order.lineItems.length - 1 ? ', ' : ''}
-                            </span>
-                          ))}
-                        </div>
-                        <button
-                          onClick={() => applyOrderServices(order)}
-                          className="w-full py-2 px-3 bg-green-50 text-green-700 rounded-lg text-sm font-medium hover:bg-green-100 border border-green-200"
-                        >
-                          Use These Services
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Right: Service Selection */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
               <h3 className="text-lg font-medium text-gray-900 mb-2">
-                Select Correct Services
+                Verify Services
               </h3>
+              <p className="text-sm text-gray-500 mb-3">
+                Pre-filled from order. Adjust if needed.
+              </p>
 
               {/* Search input */}
               <input
@@ -658,13 +630,7 @@ export default function TrainingPage() {
                 </div>
               ) : services.length === 0 ? (
                 <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                  <p className="text-yellow-700 text-sm mb-2">No services found. Check if Shopify is configured correctly.</p>
-                  <button
-                    onClick={fetchServices}
-                    className="px-3 py-1.5 bg-yellow-100 text-yellow-700 rounded text-sm font-medium hover:bg-yellow-200"
-                  >
-                    Retry
-                  </button>
+                  <p className="text-yellow-700 text-sm">No services found.</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -674,44 +640,43 @@ export default function TrainingPage() {
                       s.title.toLowerCase().includes(serviceSearch.toLowerCase())
                     )
                     .map((service) => {
-                    // Use variant_id for selection (unique per variant)
-                    const selected = selectedServices.find(s => s.service.variant_id === service.variant_id)
-                    return (
-                      <div
-                        key={service.variant_id}
-                        className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
-                          selected
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                        onClick={() => toggleService(service)}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-gray-900">{service.title}</p>
-                            <p className="text-sm text-gray-500">AED {service.price}</p>
-                          </div>
-                          {selected && (
-                            <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                              <button
-                                onClick={() => updateQuantity(service.variant_id, selected.quantity - 1)}
-                                className="w-6 h-6 rounded bg-gray-200 text-gray-700"
-                              >
-                                −
-                              </button>
-                              <span className="w-6 text-center">{selected.quantity}</span>
-                              <button
-                                onClick={() => updateQuantity(service.variant_id, selected.quantity + 1)}
-                                className="w-6 h-6 rounded bg-gray-200 text-gray-700"
-                              >
-                                +
-                              </button>
+                      const selected = selectedServices.find(s => s.service.variant_id === service.variant_id)
+                      return (
+                        <div
+                          key={service.variant_id}
+                          className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${
+                            selected
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-gray-300'
+                          }`}
+                          onClick={() => toggleService(service)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-medium text-gray-900">{service.title}</p>
+                              <p className="text-sm text-gray-500">AED {service.price}</p>
                             </div>
-                          )}
+                            {selected && (
+                              <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                <button
+                                  onClick={() => updateQuantity(service.variant_id, selected.quantity - 1)}
+                                  className="w-6 h-6 rounded bg-gray-200 text-gray-700"
+                                >
+                                  -
+                                </button>
+                                <span className="w-6 text-center">{selected.quantity}</span>
+                                <button
+                                  onClick={() => updateQuantity(service.variant_id, selected.quantity + 1)}
+                                  className="w-6 h-6 rounded bg-gray-200 text-gray-700"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
                 </div>
               )}
 
@@ -727,7 +692,7 @@ export default function TrainingPage() {
               {/* Action Buttons */}
               <div className="mt-6 flex gap-3">
                 <button
-                  onClick={skipImage}
+                  onClick={skipConversation}
                   className="flex-1 py-3 px-4 rounded-lg font-medium text-gray-700 bg-gray-100 hover:bg-gray-200"
                 >
                   Skip

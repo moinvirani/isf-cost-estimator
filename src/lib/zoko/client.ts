@@ -5,6 +5,8 @@
  * the AI recommendation system.
  */
 
+import { normalizePhone } from '@/lib/matching'
+
 const ZOKO_API_KEY = process.env.ZOKO_API_KEY
 const BASE_URL = 'https://chat.zoko.io/v2'
 
@@ -128,4 +130,105 @@ export async function findConversationsWithImages(
 
 export function isZokoConfigured(): boolean {
   return Boolean(ZOKO_API_KEY)
+}
+
+// ============================================
+// Phone Index for fast customer lookups
+// ============================================
+
+// In-memory cache for phone → customer mapping
+let phoneIndex: Map<string, ZokoCustomer> | null = null
+let indexBuildTime: number | null = null
+const INDEX_TTL_MS = 60 * 60 * 1000 // 1 hour
+
+/**
+ * Build phone → customer index by iterating all Zoko pages
+ * Results are cached in memory for fast lookups
+ */
+export async function buildCustomerPhoneIndex(forceRefresh = false): Promise<Map<string, ZokoCustomer>> {
+  // Return cached index if valid
+  if (
+    phoneIndex &&
+    indexBuildTime &&
+    !forceRefresh &&
+    Date.now() - indexBuildTime < INDEX_TTL_MS
+  ) {
+    console.log('[Zoko] Using cached phone index with', phoneIndex.size, 'entries')
+    return phoneIndex
+  }
+
+  console.log('[Zoko] Building phone index...')
+  const startTime = Date.now()
+
+  const newIndex = new Map<string, ZokoCustomer>()
+  let page = 1
+  let totalPages = 1
+
+  while (page <= totalPages) {
+    try {
+      const result = await getCustomers(page)
+      totalPages = result.totalPages
+
+      for (const customer of result.customers) {
+        // channelId is the phone number for WhatsApp customers
+        if (customer.channelId) {
+          const normalizedPhone = normalizePhone(customer.channelId)
+          if (normalizedPhone) {
+            newIndex.set(normalizedPhone, customer)
+          }
+        }
+      }
+
+      // Log progress every 50 pages
+      if (page % 50 === 0) {
+        console.log(`[Zoko] Indexed page ${page}/${totalPages}, ${newIndex.size} customers so far`)
+      }
+
+      page++
+    } catch (error) {
+      console.error(`[Zoko] Error on page ${page}:`, error)
+      page++
+    }
+  }
+
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
+  console.log(`[Zoko] Phone index built: ${newIndex.size} customers in ${elapsed}s`)
+
+  // Cache the result
+  phoneIndex = newIndex
+  indexBuildTime = Date.now()
+
+  return newIndex
+}
+
+/**
+ * Get Zoko customer by phone number (uses cached index)
+ */
+export async function getCustomerByPhone(phone: string): Promise<ZokoCustomer | null> {
+  const index = await buildCustomerPhoneIndex()
+  const normalizedPhone = normalizePhone(phone)
+
+  if (!normalizedPhone) return null
+
+  // Try exact match first
+  const exactMatch = index.get(normalizedPhone)
+  if (exactMatch) return exactMatch
+
+  // Try matching with different lengths (e.g., with/without country code)
+  for (const [indexPhone, customer] of index) {
+    if (indexPhone.endsWith(normalizedPhone) || normalizedPhone.endsWith(indexPhone)) {
+      return customer
+    }
+  }
+
+  return null
+}
+
+/**
+ * Clear the phone index cache
+ */
+export function clearPhoneIndexCache(): void {
+  phoneIndex = null
+  indexBuildTime = null
+  console.log('[Zoko] Phone index cache cleared')
 }

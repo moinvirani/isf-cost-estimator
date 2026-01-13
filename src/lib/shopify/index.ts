@@ -15,6 +15,7 @@ export {
 } from './services'
 export {
   getOrdersByPhone,
+  getRecentOrders,
   extractServicesFromOrder,
   type ShopifyOrder,
   type ShopifyOrderLineItem,
