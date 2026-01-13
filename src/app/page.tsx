@@ -536,8 +536,8 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+      {/* Main Content - extra padding at bottom for sticky footer */}
+      <div className={`max-w-3xl mx-auto px-4 py-6 space-y-6 ${allAnalyzed && hasAnyServicesSelected && !orderResult ? 'pb-28' : ''}`}>
         {/* Step 1: Upload Images */}
         <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
           <h2 className="text-lg font-medium text-gray-900 mb-4">
@@ -706,7 +706,7 @@ export default function Home() {
 
         {/* Step 4: Review & Generate Order */}
         {allAnalyzed && hasAnyServicesSelected && (
-          <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+          <section id="step-4-order" className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 scroll-mt-20">
             <h2 className="text-lg font-medium text-gray-900 mb-4">
               Step 4: Review & Generate Order
             </h2>
@@ -759,6 +759,37 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {/* Sticky Footer - visible when services are selected */}
+      {allAnalyzed && hasAnyServicesSelected && !orderResult && (
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-20">
+          <div className="max-w-3xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between gap-4">
+              {/* Total price */}
+              <div>
+                <p className="text-sm text-gray-500">Total</p>
+                <p className="text-xl font-bold text-gray-900">
+                  AED {priceCalculation.grandTotal.toFixed(2)}
+                </p>
+              </div>
+
+              {/* Generate Order button - scrolls to Step 4 */}
+              <button
+                onClick={() => {
+                  const step4 = document.getElementById('step-4-order')
+                  step4?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }}
+                className="flex-1 max-w-xs h-14 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                <span>Generate Order</span>
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }

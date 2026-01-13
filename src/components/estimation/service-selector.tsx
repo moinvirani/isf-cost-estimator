@@ -64,6 +64,10 @@ export function ServiceSelector({
 }: ServiceSelectorProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [showAllOthers, setShowAllOthers] = useState(false)
+
+  // Number of "Other Services" groups to show initially
+  const INITIAL_OTHER_GROUPS = 3
 
   // Toggle accordion expand/collapse for non-AI groups
   const toggleGroupExpanded = (groupName: string) => {
@@ -195,7 +199,14 @@ export function ServiceSelector({
 
   // Separate AI-suggested groups from others
   const aiSuggestedGroups = filteredGroups.filter(g => g.hasAiSuggested)
-  const otherGroups = filteredGroups.filter(g => !g.hasAiSuggested)
+  const allOtherGroups = filteredGroups.filter(g => !g.hasAiSuggested)
+
+  // When searching, show all results; otherwise limit to reduce scroll
+  const isSearching = searchQuery.length > 0
+  const visibleOtherGroups = isSearching || showAllOthers
+    ? allOtherGroups
+    : allOtherGroups.slice(0, INITIAL_OTHER_GROUPS)
+  const hiddenGroupCount = allOtherGroups.length - INITIAL_OTHER_GROUPS
 
   // Render a service variant row (reusable for both sections)
   const renderVariant = (service: ShopifyService, index: number) => {
@@ -329,7 +340,7 @@ export function ServiceSelector({
       ))}
 
       {/* Divider if we have both sections */}
-      {aiSuggestedGroups.length > 0 && otherGroups.length > 0 && (
+      {aiSuggestedGroups.length > 0 && allOtherGroups.length > 0 && (
         <div className="flex items-center gap-3 py-2">
           <div className="flex-1 h-px bg-gray-200" />
           <span className="text-xs text-gray-400 font-medium">Other Services</span>
@@ -337,8 +348,8 @@ export function ServiceSelector({
         </div>
       )}
 
-      {/* Other Groups - Accordion style */}
-      {otherGroups.map((group) => {
+      {/* Other Groups - Accordion style (limited initially) */}
+      {visibleOtherGroups.map((group) => {
         const isExpanded = expandedGroups.has(group.parentName)
         const hasSelectedInGroup = group.variants.some(v => isSelected(v.variant_id))
 
@@ -380,6 +391,31 @@ export function ServiceSelector({
           </div>
         )
       })}
+
+      {/* Show More / Show Fewer button (only when not searching) */}
+      {!isSearching && hiddenGroupCount > 0 && (
+        showAllOthers ? (
+          <button
+            onClick={() => setShowAllOthers(false)}
+            className="w-full py-3 text-gray-600 font-medium bg-gray-100 hover:bg-gray-200 active:bg-gray-300 rounded-xl transition-colors flex items-center justify-center gap-2"
+          >
+            <span>Show fewer</span>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          </button>
+        ) : (
+          <button
+            onClick={() => setShowAllOthers(true)}
+            className="w-full py-3 text-blue-600 font-medium bg-blue-50 hover:bg-blue-100 active:bg-blue-200 rounded-xl transition-colors flex items-center justify-center gap-2"
+          >
+            <span>Show {hiddenGroupCount} more service{hiddenGroupCount !== 1 ? 's' : ''}</span>
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        )
+      )}
 
       {/* Empty state for search */}
       {filteredGroups.length === 0 && searchQuery && (
