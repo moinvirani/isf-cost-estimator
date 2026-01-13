@@ -120,6 +120,7 @@ export default function Home() {
   // Multi-item state
   const [items, setItems] = useState<EstimationItem[]>([])
   const [currentItemIndex, setCurrentItemIndex] = useState(0)
+  const [showUploadArea, setShowUploadArea] = useState(true) // Show upload initially
 
   // Current upload batch (before creating an item)
   const [localImages, setLocalImages] = useState<LocalImage[]>([])
@@ -220,6 +221,7 @@ export default function Home() {
       setItems(prev => [...prev, newItem])
       setCurrentItemIndex(items.length) // Switch to the new item
       setLocalImages([]) // Clear local images
+      setShowUploadArea(false) // Hide upload area after creating item
 
       console.log('Upload successful, created item:', newItem)
     } catch (error) {
@@ -349,11 +351,11 @@ export default function Home() {
       }))
   }
 
-  // Add another item - reset for new upload
+  // Add another item - show upload area for new item
   const handleAddAnotherItem = () => {
     setLocalImages([])
     setUploadError(null)
-    // Don't change currentItemIndex yet - it will update when new item is created
+    setShowUploadArea(true) // Show upload area for new item
   }
 
   // Switch to editing a specific item
@@ -497,6 +499,7 @@ export default function Home() {
     setItems([])
     setCurrentItemIndex(0)
     setLocalImages([])
+    setShowUploadArea(true) // Show upload area for new estimation
     setOrderResult(null)
     setOrderError(null)
   }
@@ -593,8 +596,8 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Add Another Item button */}
-            {allItemsComplete && (
+            {/* Add Another Item button - only show when not already in upload mode */}
+            {allItemsComplete && !showUploadArea && (
               <button
                 onClick={handleAddAnotherItem}
                 className="mt-3 w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 font-medium hover:border-blue-400 hover:text-blue-600 transition-colors flex items-center justify-center gap-2"
@@ -608,8 +611,8 @@ export default function Home() {
           </section>
         )}
 
-        {/* Step 1: Upload Images (show when no current item or adding new) */}
-        {(!currentItem || (allItemsComplete && localImages.length === 0)) && !orderResult && (
+        {/* Step 1: Upload Images (show initially or when adding new item) */}
+        {showUploadArea && !orderResult && (
           <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <h2 className="text-lg font-medium text-gray-900 mb-4">
               {hasItems ? 'Add Another Item' : 'Step 1: Upload Photos'}
