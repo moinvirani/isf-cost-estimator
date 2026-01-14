@@ -13,6 +13,21 @@
 import { NextResponse } from 'next/server'
 import { fetchShopifyServices, isShopifyConfigured } from '@/lib/shopify'
 
+// CORS headers for mobile app access
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+}
+
+// Handle preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders,
+  })
+}
+
 export async function GET() {
   try {
     // Check if Shopify is configured
@@ -22,7 +37,7 @@ export async function GET() {
           success: false,
           error: 'Shopify is not configured. Please add SHOPIFY_STORE_DOMAIN and SHOPIFY_ADMIN_ACCESS_TOKEN to your environment variables.',
         },
-        { status: 500 }
+        { status: 500, headers: corsHeaders }
       )
     }
 
@@ -33,7 +48,7 @@ export async function GET() {
       success: true,
       services,
       count: services.length,
-    })
+    }, { headers: corsHeaders })
   } catch (error) {
     console.error('Error fetching services:', error)
 
@@ -42,7 +57,7 @@ export async function GET() {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to fetch services',
       },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     )
   }
 }

@@ -3,6 +3,7 @@
  *
  * Protects routes by requiring authentication.
  * Unauthenticated users are redirected to /login.
+ * Handles CORS for mobile app API access.
  */
 
 import { NextResponse, type NextRequest } from 'next/server'
@@ -14,8 +15,35 @@ const publicRoutes = ['/login', '/auth/callback']
 // Routes that should be completely public (assets, etc.)
 const alwaysPublicPaths = ['/_next', '/favicon.ico', '/api/auth']
 
+// API routes that need CORS (for mobile app access)
+const corsApiRoutes = ['/api/services', '/api/customer']
+
+// CORS headers for mobile app access
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Internal-Service',
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  // Handle CORS preflight requests for API routes
+  if (request.method === 'OPTIONS' && corsApiRoutes.some(route => pathname.startsWith(route))) {
+    return new NextResponse(null, {
+      status: 204,
+      headers: corsHeaders,
+    })
+  }
+
+  // Add CORS headers to API responses for mobile app
+  if (corsApiRoutes.some(route => pathname.startsWith(route))) {
+    const response = NextResponse.next()
+    Object.entries(corsHeaders).forEach(([key, value]) => {
+      response.headers.set(key, value)
+    })
+    return response
+  }
 
   // Skip middleware for static assets and Next.js internals
   if (alwaysPublicPaths.some(path => pathname.startsWith(path))) {
