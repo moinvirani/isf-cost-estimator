@@ -6,12 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+import { getSupabaseClient } from '@/lib/supabase/client'
 
 // Type for estimation with items
 interface EstimationWithItems {
@@ -39,6 +34,7 @@ interface EstimationWithItems {
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabaseClient()
     const { searchParams } = new URL(request.url)
     const page = parseInt(searchParams.get('page') || '1')
     const limit = parseInt(searchParams.get('limit') || '20')
@@ -132,6 +128,7 @@ interface CreateEstimationRequest {
  */
 export async function POST(request: NextRequest) {
   try {
+    const supabase = getSupabaseClient()
     const body: CreateEstimationRequest = await request.json()
 
     // Create estimation

@@ -63,6 +63,7 @@ export interface DetectedIssue {
 
 /** Full AI analysis result for a single item */
 export interface AIAnalysisResult {
+  imageIndices: number[]        // Which images (by index) belong to this item
   item_number?: number          // Position in multi-item image (1, 2, 3...)
   position?: string             // Location in image (top, middle, bottom, etc.)
   category: ItemCategory

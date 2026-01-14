@@ -6,20 +6,15 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseClient } from '@/lib/supabase/client'
 import type { SaveTrainingExampleRequest, TrainingExample } from '@/types/training'
-
-// Create Supabase client for server-side operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 /**
  * POST - Save a new training example
  */
 export async function POST(request: NextRequest) {
   try {
+    const supabase = getSupabaseClient()
     const body: SaveTrainingExampleRequest = await request.json()
 
     // Validate required fields
@@ -87,6 +82,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
+    const supabase = getSupabaseClient()
     const searchParams = request.nextUrl.searchParams
     const category = searchParams.get('category') // Optional filter
     const limit = parseInt(searchParams.get('limit') || '50', 10)

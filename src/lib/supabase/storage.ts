@@ -4,7 +4,7 @@
  * Functions for uploading and managing images in Supabase Storage.
  */
 
-import { supabase } from './client'
+import { getSupabaseClient } from './client'
 
 const BUCKET_NAME = 'item-images'
 
@@ -31,6 +31,7 @@ export async function uploadImage(file: File): Promise<{
   path: string
   url: string
 }> {
+  const supabase = getSupabaseClient()
   const fileName = generateFileName(file)
   const filePath = `uploads/${fileName}`
 
@@ -79,6 +80,7 @@ export async function uploadImages(files: File[]): Promise<{
  * @param path - The storage path (from uploadImage result)
  */
 export async function deleteImage(path: string): Promise<void> {
+  const supabase = getSupabaseClient()
   const { error } = await supabase.storage
     .from(BUCKET_NAME)
     .remove([path])
@@ -96,6 +98,7 @@ export async function deleteImage(path: string): Promise<void> {
 export async function deleteImages(paths: string[]): Promise<void> {
   if (paths.length === 0) return
 
+  const supabase = getSupabaseClient()
   const { error } = await supabase.storage
     .from(BUCKET_NAME)
     .remove(paths)

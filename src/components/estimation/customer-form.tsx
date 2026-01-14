@@ -18,12 +18,21 @@ export interface CustomerInfo {
 interface CustomerFormProps {
   onSubmit: (info: CustomerInfo) => void
   isLoading: boolean
+  defaultName?: string
+  defaultPhone?: string
+  defaultEmail?: string
 }
 
-export function CustomerForm({ onSubmit, isLoading }: CustomerFormProps) {
-  const [name, setName] = useState('')
-  const [phone, setPhone] = useState('')
-  const [email, setEmail] = useState('')
+export function CustomerForm({
+  onSubmit,
+  isLoading,
+  defaultName = '',
+  defaultPhone = '',
+  defaultEmail = '',
+}: CustomerFormProps) {
+  const [name, setName] = useState(defaultName)
+  const [phone, setPhone] = useState(defaultPhone)
+  const [email, setEmail] = useState(defaultEmail)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   const validatePhone = (value: string): boolean => {

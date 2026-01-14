@@ -48,3 +48,20 @@ export type {
   SaveTrainingExampleRequest,
   NewTrainingExample,
 } from './training'
+
+// Queue types
+export type {
+  LeadStatus,
+  QueueImage,
+  ContextMessage,
+  SelectedServiceData,
+  ZokoLead,
+  QueueListResponse,
+  QueueLeadResponse,
+  QueueSyncResponse,
+  ClaimRequest,
+  AnalyzeLeadRequest,
+  CompleteLeadRequest,
+  SkipLeadRequest,
+  QueueFilters,
+} from './queue'

@@ -5,10 +5,12 @@
  *
  * Creates a Shopify draft order with customer info and line items.
  * Returns the draft order ID and invoice URL for checkout.
+ * Requires authentication.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createDraftOrder } from '@/lib/shopify'
+import { requireAuth } from '@/lib/supabase/api-auth'
 
 // Request body type
 interface CreateDraftOrderRequest {
@@ -36,6 +38,10 @@ interface CreateDraftOrderResponse {
 export async function POST(
   request: NextRequest
 ): Promise<NextResponse<CreateDraftOrderResponse>> {
+  // Require authentication
+  const { error: authError } = await requireAuth(request)
+  if (authError) return authError as NextResponse<CreateDraftOrderResponse>
+
   try {
     // Parse request body
     const body: CreateDraftOrderRequest = await request.json()

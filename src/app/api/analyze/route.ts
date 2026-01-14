@@ -10,17 +10,12 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { getSupabaseClient } from '@/lib/supabase/client'
 import openai from '@/lib/ai/openai'
 import { buildAnalysisMessages } from '@/lib/ai/prompts'
 import { fetchShopifyServices } from '@/lib/shopify/services'
+import { requireAuth } from '@/lib/supabase/api-auth'
 import type { AIAnalysisResult, AIMultiItemResponse } from '@/types/item'
-
-// Supabase client for fetching training examples
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
 
 // Request body type - supports multiple images of the same item
 interface AnalyzeRequest {
@@ -51,6 +46,7 @@ interface TrainingPattern {
  */
 async function fetchTrainingPatterns(): Promise<TrainingPattern[]> {
   try {
+    const supabase = getSupabaseClient()
     // Fetch more examples for statistical significance
     const { data } = await supabase
       .from('training_examples')
@@ -228,6 +224,10 @@ async function imageUrlToBase64(url: string): Promise<string> {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeResponse>> {
+  // Require authentication
+  const { error: authError } = await requireAuth(request)
+  if (authError) return authError as NextResponse<AnalyzeResponse>
+
   try {
     // Parse request body
     const body: AnalyzeRequest = await request.json()

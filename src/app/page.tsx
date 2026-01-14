@@ -12,7 +12,6 @@
  */
 
 import { useState, useEffect } from 'react'
-import Link from 'next/link'
 import { ImageUpload, ServiceSelector, PriceSummary, CustomerForm, OrderSuccess } from '@/components/estimation'
 import type { CustomerInfo } from '@/components/estimation'
 import { AnnotatedImageViewer } from '@/components/ui/annotated-image-viewer'
@@ -542,26 +541,16 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50">
-      {/* Header */}
+    <div className="min-h-screen bg-gray-50">
+      {/* Page Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">
-                ISF Cost Estimator
-              </h1>
-              <p className="text-sm text-gray-500">
-                Upload photos to get service recommendations
-              </p>
-            </div>
-            <Link
-              href="/estimations"
-              className="px-3 py-2 text-sm font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              History
-            </Link>
-          </div>
+        <div className="max-w-3xl mx-auto px-4 py-4 pl-16 lg:pl-4">
+          <h1 className="text-xl font-semibold text-gray-900">
+            Manual Estimate
+          </h1>
+          <p className="text-sm text-gray-500">
+            Upload photos to get service recommendations
+          </p>
         </div>
       </header>
 
@@ -954,6 +943,6 @@ export default function Home() {
           </div>
         </div>
       )}
-    </main>
+    </div>
   )
 }
