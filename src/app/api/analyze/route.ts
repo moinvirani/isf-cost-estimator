@@ -224,9 +224,16 @@ async function imageUrlToBase64(url: string): Promise<string> {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeResponse>> {
-  // Require authentication
-  const { error: authError } = await requireAuth(request)
-  if (authError) return authError as NextResponse<AnalyzeResponse>
+  // Allow internal calls from customer-app service to bypass auth
+  // This enables /api/customer/quotes to call this endpoint internally
+  const internalService = request.headers.get('X-Internal-Service')
+  const isInternalCall = internalService === 'customer-app'
+
+  if (!isInternalCall) {
+    // Require authentication for external (staff) calls
+    const { error: authError } = await requireAuth(request)
+    if (authError) return authError as NextResponse<AnalyzeResponse>
+  }
 
   try {
     // Parse request body

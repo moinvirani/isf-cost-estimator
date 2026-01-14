@@ -22,12 +22,23 @@ import type {
 
 // Services that qualify for instant quotes (no staff review needed)
 const INSTANT_SERVICES = [
+  // Cleaning services
   'Shoe Shine',
   'Bag Cleaning',
   'Leather Conditioning',
   'Basic Polishing',
   'Dust Bag Cleaning',
   'Multi-Material Cleaning',
+  'Sneaker Cleaning',
+  'Suede Cleaning',
+  'Shampoo Suede',
+  // Basic repairs
+  'Rubber Heel Replacement',
+  'Heel Tips',
+  'Minor Touch-ups',
+  // Care treatments
+  'Waterproofing',
+  'Protection Treatment',
 ]
 
 // Confidence threshold for instant quotes
