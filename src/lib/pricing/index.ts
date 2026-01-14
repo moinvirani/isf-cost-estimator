@@ -6,6 +6,5 @@
 
 export {
   calculatePrices,
-  getModifiersForItem,
   formatPrice,
 } from './calculator'

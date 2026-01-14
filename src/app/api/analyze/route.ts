@@ -87,9 +87,9 @@ async function fetchTrainingPatterns(): Promise<TrainingPattern[]> {
       }
     }
 
-    // Return patterns with count >= 2 (statistically meaningful)
-    return Array.from(patterns.entries())
-      .filter(([, v]) => v.count >= 2)
+    // Return patterns - include even single examples for small datasets
+    const result = Array.from(patterns.entries())
+      .filter(([, v]) => v.count >= 1)
       .map(([key, v]) => {
         const [category, material, issue] = key.split('|')
         // Find most common service for this pattern
@@ -104,10 +104,36 @@ async function fetchTrainingPatterns(): Promise<TrainingPattern[]> {
       })
       .sort((a, b) => b.count - a.count)
       .slice(0, 15) // Top 15 patterns
+
+    console.log('Training patterns generated:', result.length, 'patterns')
+    if (result.length > 0) {
+      console.log('Sample patterns:', result.slice(0, 3))
+    }
+
+    return result
   } catch (error) {
     console.error('Failed to fetch training patterns:', error)
     return []
   }
+}
+
+/**
+ * Convert image URL to base64 data URL
+ * This avoids OpenAI timeout issues when fetching from Supabase Storage
+ */
+async function imageUrlToBase64(url: string): Promise<string> {
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: ${response.status}`)
+  }
+
+  const arrayBuffer = await response.arrayBuffer()
+  const base64 = Buffer.from(arrayBuffer).toString('base64')
+
+  // Determine content type from response or URL
+  const contentType = response.headers.get('content-type') || 'image/jpeg'
+
+  return `data:${contentType};base64,${base64}`
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeResponse>> {
@@ -135,14 +161,30 @@ export async function POST(request: NextRequest): Promise<NextResponse<AnalyzeRe
       )
     }
 
+    // Convert image URLs to base64 to avoid OpenAI timeout issues
+    // OpenAI sometimes can't fetch from Supabase Storage in time
+    console.log('Converting images to base64...')
+    const base64Images = await Promise.all(
+      imageUrls.map(async (url) => {
+        try {
+          return await imageUrlToBase64(url)
+        } catch (error) {
+          console.error(`Failed to convert image to base64: ${url}`, error)
+          // Fall back to original URL if conversion fails
+          return url
+        }
+      })
+    )
+    console.log('Conversion complete, sending to OpenAI...')
+
     // Fetch Shopify services and training patterns in parallel
     const [shopifyServices, trainingPatterns] = await Promise.all([
       fetchShopifyServices(),
       fetchTrainingPatterns(),
     ])
 
-    // Build messages for GPT-4 Vision (with all images of the item)
-    const messages = buildAnalysisMessages(imageUrls, shopifyServices, trainingPatterns)
+    // Build messages for GPT-4 Vision (with base64 images)
+    const messages = buildAnalysisMessages(base64Images, shopifyServices, trainingPatterns)
 
     // Call OpenAI API - increase max_tokens for bbox data
     const completion = await openai.chat.completions.create({

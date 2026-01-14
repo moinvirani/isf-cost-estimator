@@ -378,22 +378,16 @@ export default function Home() {
     // Aggregate all items' price calculations
     const allResults = items
       .filter(item => item.analysis && item.selectedServices.length > 0)
-      .map(item => calculatePrices(
-        item.selectedServices,
-        item.analysis!.material,
-        item.analysis!.condition
-      ))
+      .map(item => calculatePrices(item.selectedServices))
 
     // Merge all line items
     const allLineItems = allResults.flatMap(r => r.lineItems)
-    const totalSubtotal = allResults.reduce((sum, r) => sum + r.subtotal, 0)
-    const totalModifiers = allResults.reduce((sum, r) => sum + r.modifiersTotal, 0)
+    const grandTotal = allResults.reduce((sum, r) => sum + r.grandTotal, 0)
 
     return {
       lineItems: allLineItems,
-      subtotal: totalSubtotal,
-      modifiersTotal: totalModifiers,
-      grandTotal: totalSubtotal + totalModifiers,
+      subtotal: grandTotal,
+      grandTotal,
       currency: 'AED',
     }
   }
@@ -893,7 +887,6 @@ export default function Home() {
             <PriceSummary
               lineItems={priceCalculation.lineItems}
               subtotal={priceCalculation.subtotal}
-              modifiersTotal={priceCalculation.modifiersTotal}
               grandTotal={priceCalculation.grandTotal}
               currency={priceCalculation.currency}
             />

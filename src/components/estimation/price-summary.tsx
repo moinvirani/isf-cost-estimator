@@ -4,10 +4,8 @@
  * Price Summary Component
  *
  * Displays a summary of all selected services and the total price.
- * Shows breakdown of subtotal, modifiers, and grand total.
  */
 
-import type { PriceModifier } from '@/types/service'
 import { formatPrice } from '@/lib/pricing'
 
 interface PriceLineItem {
@@ -15,14 +13,12 @@ interface PriceLineItem {
   serviceName: string
   quantity: number
   basePrice: number
-  modifiers: PriceModifier[]
   lineTotal: number
 }
 
 interface PriceSummaryProps {
   lineItems: PriceLineItem[]
   subtotal: number
-  modifiersTotal: number
   grandTotal: number
   currency?: string
   onGenerateOrder?: () => void
@@ -31,16 +27,11 @@ interface PriceSummaryProps {
 
 export function PriceSummary({
   lineItems,
-  subtotal,
-  modifiersTotal,
   grandTotal,
   currency = 'AED',
   onGenerateOrder,
   isGenerating = false,
 }: PriceSummaryProps) {
-  // Get unique modifiers applied
-  const appliedModifiers = lineItems.length > 0 ? lineItems[0].modifiers : []
-
   if (lineItems.length === 0) {
     return (
       <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 text-center">
@@ -75,31 +66,9 @@ export function PriceSummary({
         ))}
       </div>
 
-      {/* Totals */}
-      <div className="border-t border-gray-200 p-4 space-y-2 bg-gray-50">
-        {/* Subtotal */}
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Subtotal</span>
-          <span className="text-gray-900">{formatPrice(subtotal, currency)}</span>
-        </div>
-
-        {/* Modifiers breakdown */}
-        {appliedModifiers.map((modifier) => (
-          <div key={modifier.id} className="flex justify-between text-sm">
-            <span className="text-gray-600">
-              {modifier.name}
-              {modifier.type === 'percentage' && (
-                <span className="text-gray-400 ml-1">(+{modifier.value}%)</span>
-              )}
-            </span>
-            <span className="text-amber-600">
-              +{formatPrice(modifiersTotal / appliedModifiers.length, currency)}
-            </span>
-          </div>
-        ))}
-
-        {/* Grand total */}
-        <div className="flex justify-between pt-2 border-t border-gray-300">
+      {/* Total */}
+      <div className="border-t border-gray-200 p-4 bg-gray-50">
+        <div className="flex justify-between">
           <span className="font-semibold text-gray-900">Total</span>
           <span className="font-bold text-lg text-gray-900">
             {formatPrice(grandTotal, currency)}
